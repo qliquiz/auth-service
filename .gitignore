@@ -1,0 +1,32 @@
+# enviroments
+.env
+.env.*
+!docker.env
+
+# artifacts
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# dependencies
+vendor/
+# cache Go
+*.test
+*.prof
+
+# stuff
+*.log
+*.tmp
+
+# IDEs
+.idea/
+.vscode/
+
+# macOS
+.DS_Store
+*/.DS_Store
+# Windows
+Thumbs.db
