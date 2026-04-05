@@ -50,7 +50,7 @@ func main() {
 
 	log.Info("infrastructure initialized successfully")
 
-	application := app.New(db, redisClient, log, cfg.GRPC.Port, cfg.Gateway.Port, cfg.GRPC.Timeout)
+	application := app.New(db, redisClient, log, cfg.GRPC.Port, cfg.Gateway.Port, cfg.GRPC.Timeout, cfg.JWT, cfg.Env)
 
 	go application.GrpcApp.MustRun()
 	go application.GatewayApp.MustRun()

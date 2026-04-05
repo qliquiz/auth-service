@@ -28,5 +28,9 @@ vendor/
 # macOS
 .DS_Store
 */.DS_Store
+
 # Windows
 Thumbs.db
+
+# agents
+.claude/

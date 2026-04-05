@@ -27,7 +27,47 @@ service AuthService {
       body: "*"
     };
   };
+
+  // Refresh access token using a valid refresh token (rotates the refresh token).
+  rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth/refresh"
+      body: "*"
+    };
+  };
+
+  // Logout from the current session. Requires refresh_token to identify the session.
+  rpc Logout(LogoutRequest) returns (LogoutResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth/logout"
+      body: "*"
+    };
+  };
+
+  // Revoke all sessions for the authenticated user. Requires Authorization header.
+  rpc LogoutAll(LogoutAllRequest) returns (LogoutAllResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth/logout-all"
+      body: "*"
+    };
+  };
+
+  // List all active sessions for the authenticated user. Requires Authorization header.
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse) {
+    option (google.api.http) = {
+      get: "/v1/auth/sessions"
+    };
+  };
+
+  // Revoke a specific session by ID. Requires Authorization header.
+  rpc RevokeSession(RevokeSessionRequest) returns (RevokeSessionResponse) {
+    option (google.api.http) = {
+      delete: "/v1/auth/sessions/{session_id}"
+    };
+  };
 }
+
+// ── Register ─────────────────────────────────────────────────────────────────
 
 message RegisterRequest {
   string email = 1;
@@ -38,9 +78,12 @@ message RegisterResponse {
   string user_id = 1;
 }
 
+// ── Login ────────────────────────────────────────────────────────────────────
+
 message LoginRequest {
   string email = 1;
   string password = 2;
+  string device_id = 3; // optional, e.g. FCM token or custom device identifier
 }
 
 message LoginResponse {
@@ -48,12 +91,65 @@ message LoginResponse {
   string refresh_token = 2;
 }
 
+// ── ValidateToken ─────────────────────────────────────────────────────────────
+
 message ValidateTokenRequest {
   string token = 1;
 }
 
 message ValidateTokenResponse {
-  bool valid = 1;
-  string user_id = 2;
+  bool            valid = 1;
+  string          user_id = 2;
   repeated string roles = 3;
 }
+
+// ── RefreshToken ──────────────────────────────────────────────────────────────
+
+message RefreshTokenRequest {
+  string refresh_token = 1;
+  string device_id = 2; // optional, preserves existing device_id if omitted
+}
+
+message RefreshTokenResponse {
+  string access_token = 1;
+  string refresh_token = 2;
+}
+
+// ── Logout ────────────────────────────────────────────────────────────────────
+
+message LogoutRequest {
+  string refresh_token = 1;
+}
+
+message LogoutResponse {}
+
+// ── LogoutAll ─────────────────────────────────────────────────────────────────
+
+message LogoutAllRequest {}
+
+message LogoutAllResponse {
+  int32 sessions_revoked = 1;
+}
+
+// ── Sessions ──────────────────────────────────────────────────────────────────
+
+message SessionInfo {
+  string session_id = 1;
+  string device_id = 2;
+  string user_agent = 3;
+  string ip_address = 4;
+  int64  created_at = 5; // unix seconds
+  int64  last_used_at = 6; // unix seconds
+}
+
+message ListSessionsRequest {}
+
+message ListSessionsResponse {
+  repeated SessionInfo sessions = 1;
+}
+
+message RevokeSessionRequest {
+  string session_id = 1;
+}
+
+message RevokeSessionResponse {}

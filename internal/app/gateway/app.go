@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"auth-service/docs"
 	"auth-service/gen/api"
 	"context"
 	"errors"
@@ -13,20 +14,35 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+const scalarHTML = `<!DOCTYPE html>
+<html>
+  <head>
+    <title>Auth Service — API Reference</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+  <body>
+    <script
+      id="api-reference"
+      data-url="/openapi.json"
+      src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  </body>
+</html>`
+
 type App struct {
 	server     *http.Server
 	log        *slog.Logger
 	port       int
 	grpcTarget string
+	env        string
 }
 
-func New(log *slog.Logger, port int, grpcPort int) *App {
-	grpcTarget := fmt.Sprintf("localhost:%d", grpcPort)
-
+func New(log *slog.Logger, port int, grpcPort int, env string) *App {
 	return &App{
 		log:        log,
 		port:       port,
-		grpcTarget: grpcTarget,
+		grpcTarget: fmt.Sprintf("localhost:%d", grpcPort),
+		env:        env,
 	}
 }
 
@@ -43,9 +59,27 @@ func (a *App) run() error {
 	mux := runtime.NewServeMux()
 	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
 
-	err := api.RegisterAuthServiceHandlerFromEndpoint(ctx, mux, a.grpcTarget, opts)
-	if err != nil {
+	if err := api.RegisterAuthServiceHandlerFromEndpoint(ctx, mux, a.grpcTarget, opts); err != nil {
 		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	if a.env != "prod" {
+		if err := mux.HandlePath("GET", "/openapi.json", func(w http.ResponseWriter, _ *http.Request, _ map[string]string) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(docs.OpenAPISpec)
+		}); err != nil {
+			return fmt.Errorf("%s: register /openapi.json: %w", op, err)
+		}
+
+		if err := mux.HandlePath("GET", "/docs", func(w http.ResponseWriter, _ *http.Request, _ map[string]string) {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = fmt.Fprint(w, scalarHTML)
+		}); err != nil {
+			return fmt.Errorf("%s: register /docs: %w", op, err)
+		}
+
+		a.log.Info("api docs available",
+			slog.String("url", fmt.Sprintf("http://localhost:%d/docs", a.port)))
 	}
 
 	a.log.Info("starting gateway", slog.Int("port", a.port))
@@ -55,7 +89,7 @@ func (a *App) run() error {
 		Handler: mux,
 	}
 
-	if err = a.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := a.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("%s: %w", op, err)
 	}
 

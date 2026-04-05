@@ -3,8 +3,11 @@ package app
 import (
 	"auth-service/internal/app/gateway"
 	grpcApp "auth-service/internal/app/grpc"
+	"auth-service/internal/config"
+	jwtlib "auth-service/internal/lib/jwt"
 	"auth-service/internal/postgres"
-	"auth-service/internal/repository/user"
+	sessionRepo "auth-service/internal/repository/session"
+	userRepo "auth-service/internal/repository/user"
 	"auth-service/internal/service/auth"
 	"log/slog"
 	"time"
@@ -24,13 +27,17 @@ func New(
 	grpcPort int,
 	gatewayPort int,
 	timeout time.Duration,
+	jwtCfg config.JWTConfig,
+	env string,
 ) *App {
-	repo := user.New(db.Pool)
-	// В будущем здесь добавим JWT менеджер
-	service := auth.New(repo, redisClient, log, timeout)
+	uRepo := userRepo.New(db.Pool)
+	sRepo := sessionRepo.New(db.Pool)
+	jwtManager := jwtlib.New(jwtCfg.Secret, jwtCfg.AccessTTL)
+
+	service := auth.New(uRepo, sRepo, jwtManager, redisClient, log, jwtCfg.RefreshTTL)
 
 	grpcApplication := grpcApp.New(service, log, grpcPort)
-	gatewayApplication := gateway.New(log, gatewayPort, grpcPort)
+	gatewayApplication := gateway.New(log, gatewayPort, grpcPort, env)
 
 	return &App{
 		GrpcApp:    grpcApplication,

@@ -28,13 +28,14 @@
 
 Вся конфигурация осуществляется через переменные окружения.
 
-1.  Создайте файл `.env` в корне проекта:
-    ```bash
-    cp .env.example .env # Если есть пример, или создайте вручную
-    ```
-2.  Настройте параметры подключения:
+1. Создайте файл `.env` в корне проекта:
+   ```bash
+   cp .env.example .env # Если есть пример, или создайте вручную
+   ```
+2. Настройте параметры подключения:
 
 **Пример файла `.env`:**
+
 ```env
 ENV=local # Среда выполнения (local, dev, prod)
 GRPC_PORT=8082 # Порт gRPC сервера
@@ -51,6 +52,7 @@ REDIS_HOST=localhost
 REDIS_PORT=6379
 REDIS_PASSWORD=
 ```
+
 **Важно:** Для запуска внутри Docker установите `POSTGRES_HOST=db` и `REDIS_HOST=redis`.
 
 ---
@@ -58,9 +60,11 @@ REDIS_PASSWORD=
 ### 2. Быстрый старт (Docker)
 
 Запуск всей инфраструктуры и приложения в контейнерах:
+
 ```bash
 make compose
 ```
+
 Эта команда соберет образы, запустит БД, Redis, применит миграции и запустит сервис.
 
 ---
@@ -93,6 +97,7 @@ make compose
 ### Пример HTTP-запроса (cURL)
 
 Регистрация нового пользователя:
+
 ```bash
 curl -X POST http://localhost:8080/v1/auth/register \
 -H "Content-Type: application/json" \
@@ -102,6 +107,7 @@ curl -X POST http://localhost:8080/v1/auth/register \
 ### Пример gRPC-запроса (grpcurl)
 
 Вход в систему:
+
 ```bash
 grpcurl -plaintext -d '{"email": "user@example.com", "password": "securepassword"}' \
 localhost:8082 api.AuthService/Login

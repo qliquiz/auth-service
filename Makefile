@@ -7,7 +7,7 @@ endif
 
 proto:
 	@echo "generating proto files..."
-	@mkdir -p gen/api
+	@mkdir -p gen/api docs
 	@protoc \
      		-I api/auth \
      		-I api \
@@ -15,6 +15,7 @@ proto:
      		--go_out=gen/api --go_opt=paths=source_relative \
      		--go-grpc_out=gen/api --go-grpc_opt=paths=source_relative \
 			--grpc-gateway_out=gen/api --grpc-gateway_opt=paths=source_relative \
+			--openapiv2_out=docs \
      		auth.proto
 	@echo "proto files generated successfully."
 
