@@ -31,11 +31,7 @@ build:
 	@echo "building the application..."
 	@go build -o ./bin/auth-service ./cmd/auth-service
 
-run: build migrate-up
-	@echo "running the application..."
-	@./bin/auth-service
-
-run-with-db-in-docker: build db migrate-up
+run: build compose
 	@echo "running the application..."
 	@./bin/auth-service
 

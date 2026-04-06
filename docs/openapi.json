@@ -1,0 +1,663 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Auth Service",
+    "description": "Authentication and session management microservice.\n\n## Overview\n\nExposes both **gRPC** (`:8082`) and **REST** (`:8080`, via gRPC-Gateway) APIs.\n\n## Token strategy\n\n| Token | Format | TTL | Storage |\n|---|---|---|---|\n| Access token | JWT HS256 | 15 min | Stateless — validated by signature only |\n| Refresh token | 32-byte URL-safe random string | 30 days | SHA-256 hash in PostgreSQL + Redis cache |\n\nEvery `RefreshToken` call **rotates** both tokens — the old refresh token is immediately invalidated in the DB and Redis.\n\n## Authentication\n\nProtected endpoints require an `Authorization: Bearer <access_token>` header.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "Local / dev (REST via gRPC-Gateway)"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Auth",
+      "description": "Public endpoints — no credentials required."
+    },
+    {
+      "name": "Sessions",
+      "description": "Session management — requires a valid access token in the `Authorization` header."
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT access token issued by `/v1/auth/login` or `/v1/auth/refresh`. TTL: 15 minutes."
+      }
+    },
+    "schemas": {
+      "RegisterRequest": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "User's email address. Must be unique across the service.",
+            "example": "alice@example.com"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "minLength": 8,
+            "description": "Plain-text password. Minimum 8 characters. Stored as an argon2id hash.",
+            "example": "s3cureP@ssw0rd"
+          }
+        }
+      },
+      "RegisterResponse": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID of the newly created user.",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "Registered email address.",
+            "example": "alice@example.com"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "description": "Plain-text password.",
+            "example": "s3cureP@ssw0rd"
+          },
+          "deviceId": {
+            "type": "string",
+            "description": "Optional client-provided device identifier (e.g. FCM token, custom string). Used to distinguish sessions across devices. Falls back to the User-Agent header if omitted.",
+            "example": "iphone-14-pro-abc123"
+          }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string",
+            "description": "Short-lived JWT (HS256). Include as `Authorization: Bearer <token>` on protected requests. TTL: 15 minutes.",
+            "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOiI1NTBlODQwMC0..."
+          },
+          "refreshToken": {
+            "type": "string",
+            "description": "Long-lived opaque token. Store securely (HttpOnly cookie or secure storage). Use with `/v1/auth/refresh` to obtain a new pair. TTL: 30 days.",
+            "example": "v2.local.Tdm3..."
+          }
+        }
+      },
+      "ValidateTokenRequest": {
+        "type": "object",
+        "required": ["token"],
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "The JWT access token to validate.",
+            "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+          }
+        }
+      },
+      "ValidateTokenResponse": {
+        "type": "object",
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "description": "`true` if the token signature is valid and the token has not expired."
+          },
+          "userId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID of the token owner. Empty string when `valid` is `false`.",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "roles": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Roles embedded in the token claims.",
+            "example": ["user"]
+          }
+        }
+      },
+      "RefreshTokenRequest": {
+        "type": "object",
+        "required": ["refreshToken"],
+        "properties": {
+          "refreshToken": {
+            "type": "string",
+            "description": "The current refresh token. It will be immediately invalidated after a successful call — use the new one returned in the response.",
+            "example": "v2.local.Tdm3..."
+          },
+          "deviceId": {
+            "type": "string",
+            "description": "Optional. If provided, updates the device identifier for this session. Preserves the existing `device_id` when omitted.",
+            "example": "iphone-14-pro-abc123"
+          }
+        }
+      },
+      "RefreshTokenResponse": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string",
+            "description": "New access token (JWT HS256). The previous access token remains valid until its own TTL expires.",
+            "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOiI1NTBl..."
+          },
+          "refreshToken": {
+            "type": "string",
+            "description": "New refresh token. Replace the old one immediately — it is now invalid.",
+            "example": "v2.local.newToken..."
+          }
+        }
+      },
+      "LogoutRequest": {
+        "type": "object",
+        "required": ["refreshToken"],
+        "properties": {
+          "refreshToken": {
+            "type": "string",
+            "description": "The refresh token of the session to terminate. The corresponding session is deleted from DB and Redis.",
+            "example": "v2.local.Tdm3..."
+          }
+        }
+      },
+      "LogoutResponse": {
+        "type": "object",
+        "description": "Empty response — the session has been terminated."
+      },
+      "LogoutAllRequest": {
+        "type": "object",
+        "description": "Empty body — the user is identified via the `Authorization` header."
+      },
+      "LogoutAllResponse": {
+        "type": "object",
+        "properties": {
+          "sessionsRevoked": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of sessions that were deleted (including the current session).",
+            "example": 3
+          }
+        }
+      },
+      "SessionInfo": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Unique session identifier. Use with `DELETE /v1/auth/sessions/{session_id}` to revoke.",
+            "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+          },
+          "deviceId": {
+            "type": "string",
+            "description": "Device identifier provided at login, or the User-Agent if none was given.",
+            "example": "iphone-14-pro-abc123"
+          },
+          "userAgent": {
+            "type": "string",
+            "description": "HTTP User-Agent of the client that created this session.",
+            "example": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)"
+          },
+          "ipAddress": {
+            "type": "string",
+            "description": "IP address from which this session was created.",
+            "example": "93.184.216.34"
+          },
+          "createdAt": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix timestamp (seconds) when the session was created.",
+            "example": 1712345678
+          },
+          "lastUsedAt": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix timestamp (seconds) of the last token refresh for this session.",
+            "example": 1712399999
+          }
+        }
+      },
+      "ListSessionsResponse": {
+        "type": "object",
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/SessionInfo" },
+            "description": "All active sessions for the authenticated user, ordered by `last_used_at` descending."
+          }
+        }
+      },
+      "RevokeSessionResponse": {
+        "type": "object",
+        "description": "Empty response — the session has been revoked."
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "description": "gRPC status code.",
+            "example": 16
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable error message.",
+            "example": "invalid credentials"
+          },
+          "details": {
+            "type": "array",
+            "items": { "type": "object" },
+            "description": "Additional error details (may be empty)."
+          }
+        }
+      }
+    },
+    "responses": {
+      "Unauthenticated": {
+        "description": "Missing, expired, or invalid credentials.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "code": 16,
+              "message": "invalid credentials",
+              "details": []
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "The requested resource does not exist or belongs to another user.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "code": 5,
+              "message": "session not found",
+              "details": []
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "Unexpected server error.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "code": 13,
+              "message": "internal error",
+              "details": []
+            }
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/v1/auth/register": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Register a new user",
+        "description": "Creates a new user account.\n\nThe password is hashed with **argon2id** (`m=65536, t=3, p=4`) before storage — the plain-text password is never persisted.\n\n**Errors:**\n- `400 Bad Request` — email format invalid or password shorter than 8 characters\n- `409 Conflict` — email address is already registered",
+        "operationId": "Register",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RegisterRequest" },
+              "example": {
+                "email": "alice@example.com",
+                "password": "s3cureP@ssw0rd"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "User created successfully.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RegisterResponse" },
+                "example": {
+                  "userId": "550e8400-e29b-41d4-a716-446655440000"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error — invalid email format or password too short.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "invalid_email": {
+                    "summary": "Invalid email",
+                    "value": { "code": 3, "message": "invalid email format", "details": [] }
+                  },
+                  "weak_password": {
+                    "summary": "Password too short",
+                    "value": { "code": 3, "message": "password must be at least 8 characters", "details": [] }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Email address is already registered.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "code": 6, "message": "email already registered", "details": [] }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/auth/login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Log in and obtain tokens",
+        "description": "Authenticates a user and opens a new session.\n\nReturns an **access token** (JWT, 15 min) and a **refresh token** (opaque, 30 days). Store the refresh token in HttpOnly cookie or secure device storage.\n\nThe optional `device_id` is stored with the session and displayed in the sessions list — useful for showing users which devices are logged in. Falls back to the `User-Agent` header if omitted.\n\n**Errors:**\n- `401 Unauthenticated` — email not found or password incorrect (both return the same error to prevent user enumeration)",
+        "operationId": "Login",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginRequest" },
+              "examples": {
+                "web": {
+                  "summary": "Web browser login",
+                  "value": {
+                    "email": "alice@example.com",
+                    "password": "s3cureP@ssw0rd"
+                  }
+                },
+                "mobile": {
+                  "summary": "Mobile app login with device ID",
+                  "value": {
+                    "email": "alice@example.com",
+                    "password": "s3cureP@ssw0rd",
+                    "deviceId": "iphone-14-pro-abc123"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful. Both tokens issued.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LoginResponse" },
+                "example": {
+                  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJlbWFpbCI6ImFsaWNlQGV4YW1wbGUuY29tIiwicm9sZXMiOlsidXNlciJdLCJleHAiOjE3MDAwMDAwMDB9.abc123",
+                  "refreshToken": "v2.local.Tdm3xyzABC..."
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/auth/validate": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Validate an access token",
+        "description": "Performs a **stateless** JWT signature and expiry check. Does not touch the database or Redis.\n\nDesigned for **inter-service** use — a downstream service can call this endpoint to verify a token without knowing the JWT secret.\n\n> This endpoint always returns HTTP 200. Inspect the `valid` field to determine whether the token is acceptable.",
+        "operationId": "ValidateToken",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ValidateTokenRequest" },
+              "example": {
+                "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validation result. Check the `valid` field — this endpoint never returns a non-200 status for invalid tokens.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ValidateTokenResponse" },
+                "examples": {
+                  "valid": {
+                    "summary": "Valid token",
+                    "value": {
+                      "valid": true,
+                      "userId": "550e8400-e29b-41d4-a716-446655440000",
+                      "roles": ["user"]
+                    }
+                  },
+                  "invalid": {
+                    "summary": "Expired or malformed token",
+                    "value": {
+                      "valid": false,
+                      "userId": "",
+                      "roles": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/auth/refresh": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Rotate tokens",
+        "description": "Exchanges a valid refresh token for a **new access token + new refresh token**.\n\n**Token rotation:** the submitted refresh token is immediately deleted from the database and Redis — it cannot be reused. Replace it with the new one returned in the response.\n\nIf the refresh token is expired, it is deleted automatically and `401` is returned.\n\n**Redis cache:** on a cache hit the DB is not queried. On cache miss the DB is the fallback source of truth.\n\n**Errors:**\n- `401 Unauthenticated` — token not found, already rotated, or expired",
+        "operationId": "RefreshToken",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RefreshTokenRequest" },
+              "example": {
+                "refreshToken": "v2.local.Tdm3..."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "New token pair issued. Discard the old refresh token immediately.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RefreshTokenResponse" },
+                "example": {
+                  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.newPayload...",
+                  "refreshToken": "v2.local.newToken..."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Refresh token is invalid, has already been rotated, or has expired.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "not_found": {
+                    "summary": "Token not found or already rotated",
+                    "value": { "code": 16, "message": "invalid refresh token", "details": [] }
+                  },
+                  "expired": {
+                    "summary": "Token expired",
+                    "value": { "code": 16, "message": "refresh token expired", "details": [] }
+                  }
+                }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/auth/logout": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Terminate the current session",
+        "description": "Deletes the session identified by the provided refresh token from both PostgreSQL and the Redis cache.\n\nThe access token that was paired with this session remains technically valid until its TTL expires (max 15 min) — revoke it on the client side immediately.\n\nThis endpoint is **idempotent** — calling it with an already-invalidated token still returns 200.",
+        "operationId": "Logout",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LogoutRequest" },
+              "example": {
+                "refreshToken": "v2.local.Tdm3..."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Session terminated.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LogoutResponse" },
+                "example": {}
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/auth/logout-all": {
+      "post": {
+        "tags": ["Sessions"],
+        "summary": "Revoke all sessions",
+        "description": "Deletes **all active sessions** for the authenticated user — including the session used to make this request.\n\nAll corresponding Redis cache keys are explicitly deleted (no stale-cache window). Any existing refresh tokens are immediately invalidated.\n\n**Use case:** compromised account, password change, \"log out everywhere\" button.\n\n**Errors:**\n- `401 Unauthenticated` — missing or invalid `Authorization` header",
+        "operationId": "LogoutAll",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LogoutAllRequest" },
+              "example": {}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "All sessions revoked.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LogoutAllResponse" },
+                "example": {
+                  "sessionsRevoked": 3
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/auth/sessions": {
+      "get": {
+        "tags": ["Sessions"],
+        "summary": "List active sessions",
+        "description": "Returns all active sessions for the authenticated user, ordered by `last_used_at` descending (most recently used first).\n\nEach session includes the device identifier, IP address, and User-Agent — useful for building a \"logged-in devices\" screen.\n\n**Errors:**\n- `401 Unauthenticated` — missing or invalid `Authorization` header",
+        "operationId": "ListSessions",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Session list returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ListSessionsResponse" },
+                "example": {
+                  "sessions": [
+                    {
+                      "sessionId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                      "deviceId": "iphone-14-pro-abc123",
+                      "userAgent": "MyApp/2.1 (iPhone; iOS 17.0)",
+                      "ipAddress": "93.184.216.34",
+                      "createdAt": 1712300000,
+                      "lastUsedAt": 1712399999
+                    },
+                    {
+                      "sessionId": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+                      "deviceId": "Chrome/124 on macOS",
+                      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+                      "ipAddress": "192.168.1.10",
+                      "createdAt": 1712200000,
+                      "lastUsedAt": 1712350000
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/auth/sessions/{sessionId}": {
+      "delete": {
+        "tags": ["Sessions"],
+        "summary": "Revoke a specific session",
+        "description": "Deletes a single session by its ID. The session must belong to the authenticated user — attempting to revoke another user's session returns `404` (ownership is enforced at the DB level via `WHERE id = $1 AND user_id = $2`).\n\nThe corresponding Redis cache key is explicitly deleted.\n\n**Use case:** revoke a session from a lost or compromised device while keeping other sessions active.\n\n**Errors:**\n- `401 Unauthenticated` — missing or invalid `Authorization` header\n- `404 Not Found` — session does not exist or belongs to a different user",
+        "operationId": "RevokeSession",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "UUID of the session to revoke. Obtain from `GET /v1/auth/sessions`.",
+            "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session revoked successfully.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RevokeSessionResponse" },
+                "example": {}
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    }
+  }
+}

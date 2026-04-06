@@ -64,7 +64,7 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if err := application.GatewayApp.Stop(shutdownCtx); err != nil {
+	if err = application.GatewayApp.Stop(shutdownCtx); err != nil {
 		log.Error("gateway shutdown error", "error", err)
 	}
 	application.GrpcApp.Stop()
