@@ -53,16 +53,17 @@ func (r *SessionRepository) GetByTokenHash(ctx context.Context, tokenHash string
 	return &s, nil
 }
 
-func (r *SessionRepository) DeleteByID(ctx context.Context, sessionID, userID string) error {
-	const q = `DELETE FROM sessions WHERE id = $1 AND user_id = $2`
-	tag, err := r.db.Exec(ctx, q, sessionID, userID)
+func (r *SessionRepository) DeleteByID(ctx context.Context, sessionID, userID string) (string, error) {
+	const q = `DELETE FROM sessions WHERE id = $1 AND user_id = $2 RETURNING token_hash`
+	var tokenHash string
+	err := r.db.QueryRow(ctx, q, sessionID, userID).Scan(&tokenHash)
 	if err != nil {
-		return fmt.Errorf("delete session: %w", err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrNotFound
+		}
+		return "", fmt.Errorf("delete session: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return tokenHash, nil
 }
 
 func (r *SessionRepository) DeleteByTokenHash(ctx context.Context, tokenHash string) error {
@@ -71,13 +72,23 @@ func (r *SessionRepository) DeleteByTokenHash(ctx context.Context, tokenHash str
 	return err
 }
 
-func (r *SessionRepository) DeleteAllByUserID(ctx context.Context, userID string) (int64, error) {
-	const q = `DELETE FROM sessions WHERE user_id = $1`
-	tag, err := r.db.Exec(ctx, q, userID)
+func (r *SessionRepository) DeleteAllByUserID(ctx context.Context, userID string) ([]string, error) {
+	const q = `DELETE FROM sessions WHERE user_id = $1 RETURNING token_hash`
+	rows, err := r.db.Query(ctx, q, userID)
 	if err != nil {
-		return 0, fmt.Errorf("delete all sessions: %w", err)
+		return nil, fmt.Errorf("delete all sessions: %w", err)
 	}
-	return tag.RowsAffected(), nil
+	defer rows.Close()
+
+	var hashes []string
+	for rows.Next() {
+		var h string
+		if err = rows.Scan(&h); err != nil {
+			return nil, fmt.Errorf("scan token hash: %w", err)
+		}
+		hashes = append(hashes, h)
+	}
+	return hashes, rows.Err()
 }
 
 func (r *SessionRepository) ListByUserID(ctx context.Context, userID string) ([]*models.Session, error) {

@@ -39,6 +39,21 @@ make lint
 
 # Clean generated and compiled artifacts
 make clean
+
+# Run unit tests
+make test
+
+# Run integration tests (requires Docker)
+make test-integration
+
+# Run e2e tests (requires Docker)
+make test-e2e
+
+# Run all tests
+make test-all
+
+# Run unit tests with HTML coverage report → tests/coverage.html
+make test-cover
 ```
 
 Running a single test:
@@ -129,7 +144,8 @@ CREATE TABLE users
 ## Session Redis Cache
 
 Key: `refresh:{sha256_hex}` → JSON `{sid, uid, email, did, exp}`. TTL matches session `expires_at`. On cache miss, falls
-back to DB. `LogoutAll` deletes DB rows; Redis keys expire naturally.
+back to DB. `Logout`, `LogoutAll`, and `RevokeSession` explicitly delete Redis keys (via `DEL`) in addition to removing
+DB rows — no stale-cache window.
 
 ## Password Hashing
 

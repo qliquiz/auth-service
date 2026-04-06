@@ -1,0 +1,2 @@
+gen/api/*.go linguist-generated=true
+docs/auth.swagger.json linguist-generated=true

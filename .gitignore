@@ -11,6 +11,12 @@ bin/
 *.so
 *.dylib
 
+# test coverage (generated artifacts, not source)
+coverage.out
+coverage.html
+tests/coverage.out
+tests/coverage.html
+
 # dependencies
 vendor/
 # cache Go

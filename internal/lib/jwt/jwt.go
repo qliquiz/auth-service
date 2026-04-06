@@ -13,7 +13,10 @@ type Manager struct {
 }
 
 type Claims struct {
-	UserID string   `json:"sub"`
+	// UserID is a custom claim under the "uid" key.
+	// We still set RegisteredClaims.Subject = userID for standard compliance,
+	// but avoid a JSON-key conflict with the embedded Subject field.
+	UserID string   `json:"uid"`
 	Email  string   `json:"email"`
 	Roles  []string `json:"roles"`
 	jwt.RegisteredClaims

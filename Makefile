@@ -3,7 +3,7 @@ ifneq (,$(wildcard ./.env))
     export
 endif
 
-.PHONY: proto lint compose build run run-with-db-in-docker db migrate-up migrate-down clean
+.PHONY: proto lint compose build run run-with-db-in-docker db migrate-up migrate-down clean test test-integration test-e2e test-cover
 
 proto:
 	@echo "generating proto files..."
@@ -55,6 +55,29 @@ migrate-down:
 		--migrations-path=./migrations \
 		--command=down
 
+# Detect Docker socket at shell time (supports Docker Desktop, Colima, and Linux).
+DOCKER_ENV = DOCKER_HOST=$$([ -S /var/run/docker.sock ] && echo unix:///var/run/docker.sock || echo unix://$$HOME/.colima/default/docker.sock) TESTCONTAINERS_RYUK_DISABLED=true
+
+test:
+	@echo "running unit tests..."
+	@go test -race -count=1 ./...
+
+test-integration:
+	@echo "running integration tests (requires Docker)..."
+	@$(DOCKER_ENV) go test -race -count=1 -tags=integration -timeout=180s -p=1 ./internal/repository/...
+
+test-e2e:
+	@echo "running e2e tests (requires Docker)..."
+	@$(DOCKER_ENV) go test -race -count=1 -tags=integration,e2e -timeout=180s ./tests/e2e/...
+
+test-all: test test-integration test-e2e
+
+test-cover:
+	@echo "running tests with coverage..."
+	@go test -race -count=1 -coverprofile=tests/coverage.out ./...
+	@go tool cover -html=tests/coverage.out -o tests/coverage.html
+	@echo "coverage report → coverage.html"
+
 clean:
 	@echo "cleaning up..."
-	@rm -rf ./gen ./bin
+	@rm -rf ./gen ./bin ./tests/coverage.out ./tests/coverage.html

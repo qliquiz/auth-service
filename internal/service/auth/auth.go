@@ -27,6 +27,23 @@ import (
 
 const redisSessionPrefix = "refresh:"
 
+// userRepository is the interface the service requires from the user data store.
+type userRepository interface {
+	Create(ctx context.Context, email, passwordHash string) (*models.User, error)
+	GetByEmail(ctx context.Context, email string) (*models.User, error)
+	GetByID(ctx context.Context, id string) (*models.User, error)
+}
+
+// sessionRepository is the interface the service requires from the session data store.
+type sessionRepository interface {
+	Create(ctx context.Context, s *models.Session) error
+	GetByTokenHash(ctx context.Context, tokenHash string) (*models.Session, error)
+	DeleteByID(ctx context.Context, sessionID, userID string) (string, error)
+	DeleteByTokenHash(ctx context.Context, tokenHash string) error
+	DeleteAllByUserID(ctx context.Context, userID string) ([]string, error)
+	ListByUserID(ctx context.Context, userID string) ([]*models.Session, error)
+}
+
 // redisSession is the value stored in Redis for a refresh token.
 type redisSession struct {
 	SessionID string    `json:"sid"`
@@ -38,8 +55,8 @@ type redisSession struct {
 
 type AuthService struct {
 	api.UnimplementedAuthServiceServer
-	userRepo    *userRepo.UserRepository
-	sessionRepo *sessionRepo.SessionRepository
+	userRepo    userRepository
+	sessionRepo sessionRepository
 	jwtManager  *jwtlib.Manager
 	redis       *redis.Client
 	log         *slog.Logger
@@ -47,8 +64,8 @@ type AuthService struct {
 }
 
 func New(
-	userRepository *userRepo.UserRepository,
-	sessionRepository *sessionRepo.SessionRepository,
+	userRepository userRepository,
+	sessionRepository sessionRepository,
 	jwtManager *jwtlib.Manager,
 	redisClient *redis.Client,
 	log *slog.Logger,
@@ -301,15 +318,18 @@ func (s *AuthService) LogoutAll(ctx context.Context, _ *api.LogoutAllRequest) (*
 		return nil, err
 	}
 
-	count, err := s.sessionRepo.DeleteAllByUserID(ctx, userID)
+	hashes, err := s.sessionRepo.DeleteAllByUserID(ctx, userID)
 	if err != nil {
 		log.Error("delete all sessions", slog.String("err", err.Error()))
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 
-	// Redis cache entries expire on their own TTL; no bulk delete needed.
-	log.Info("all sessions revoked", slog.String("user_id", userID), slog.Int64("count", count))
-	return &api.LogoutAllResponse{SessionsRevoked: int32(count)}, nil
+	for _, h := range hashes {
+		s.deleteSessionFromCache(ctx, h)
+	}
+
+	log.Info("all sessions revoked", slog.String("user_id", userID), slog.Int("count", len(hashes)))
+	return &api.LogoutAllResponse{SessionsRevoked: int32(len(hashes))}, nil
 }
 
 // ── ListSessions ──────────────────────────────────────────────────────────────
@@ -355,15 +375,16 @@ func (s *AuthService) RevokeSession(ctx context.Context, req *api.RevokeSessionR
 		return nil, err
 	}
 
-	if err = s.sessionRepo.DeleteByID(ctx, req.SessionId, userID); err != nil {
+	tokenHash, err := s.sessionRepo.DeleteByID(ctx, req.SessionId, userID)
+	if err != nil {
 		if errors.Is(err, sessionRepo.ErrNotFound) {
 			return nil, status.Error(codes.NotFound, "session not found")
 		}
 		log.Error("delete session", slog.String("err", err.Error()))
 		return nil, status.Error(codes.Internal, "internal error")
 	}
+	s.deleteSessionFromCache(ctx, tokenHash)
 
-	// We don't have the token_hash here, so the Redis key will expire on its own TTL.
 	return &api.RevokeSessionResponse{}, nil
 }
 
