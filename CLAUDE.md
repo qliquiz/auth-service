@@ -13,10 +13,10 @@ storage) and Redis (sessions/tokens).
 # Generate Go code from .proto files (must run after editing api/**/*.proto)
 make proto
 
-# Start full stack in Docker (DB + Redis + app)
+# Start PostgreSQL + Redis in Docker (no app container)
 make compose
 
-# Start only infrastructure (PostgreSQL + Redis) in Docker
+# Start only PostgreSQL in Docker
 make db
 
 # Apply database migrations
@@ -28,11 +28,9 @@ make migrate-down
 # Build binary to ./bin/auth-service
 make build
 
-# Build + migrate + run locally (requires DB running)
+# Start PostgreSQL + Redis in Docker, build binary, run app locally
+# (run migrations separately with make migrate-up on first run)
 make run
-
-# Start DB in Docker, then build + migrate + run locally
-make run-with-db-in-docker
 
 # Lint
 make lint
@@ -95,13 +93,18 @@ in the proto file.
 
 Loaded from `.env` via `cleanenv`. Key variables:
 
-| Variable       | Default | Notes                                      |
-|----------------|---------|--------------------------------------------|
-| `ENV`          | `local` | `local` (pretty logs), `dev`/`prod` (JSON) |
-| `GRPC_PORT`    | `8082`  | gRPC listen port                           |
-| `GATEWAY_PORT` | `8080`  | HTTP gateway port                          |
-| `POSTGRES_*`   | —       | Host, port, user, password, db             |
-| `REDIS_*`      | —       | Host, port, optional password              |
+| Variable                   | Default | Notes                                           |
+|----------------------------|---------|-------------------------------------------------|
+| `ENV`                      | `local` | `local` (pretty logs), `dev`/`prod` (JSON)      |
+| `GRPC_PORT`                | `8082`  | gRPC listen port                                |
+| `GATEWAY_PORT`             | `8080`  | HTTP gateway port                               |
+| `POSTGRES_*`               | —       | Host, port, user, password, db                  |
+| `REDIS_*`                  | —       | Host, port, optional password                   |
+| `BRUTE_FORCE_MAX_ATTEMPTS` | `5`     | Failed logins before account lockout            |
+| `BRUTE_FORCE_WINDOW`       | `15m`   | Rolling window for counting failures            |
+| `BRUTE_FORCE_LOCKOUT_TTL`  | `15m`   | How long an account stays locked                |
+| `RATE_LIMIT_GLOBAL_RPM`    | `300`   | Max requests/min per IP (all endpoints)         |
+| `RATE_LIMIT_LOGIN_RPM`     | `20`    | Stricter limit for Login and Register endpoints |
 
 ## API Contracts
 

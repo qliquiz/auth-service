@@ -19,8 +19,9 @@ func New(
 	authService *auth.AuthService,
 	log *slog.Logger,
 	port int,
+	opts ...grpc.ServerOption,
 ) *App {
-	gRPCServer := grpc.NewServer()
+	gRPCServer := grpc.NewServer(opts...)
 
 	auth.Register(gRPCServer, authService)
 

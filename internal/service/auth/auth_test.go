@@ -54,7 +54,7 @@ func newFixture(t *testing.T) *fixture {
 	sRepo := &mockSessionRepo{}
 	jwtMgr := jwtlib.New(testJWTSecret, 15*time.Minute)
 
-	svc := auth.New(uRepo, sRepo, jwtMgr, redisClient, slog.Default(), testRefreshTTL)
+	svc := auth.New(uRepo, sRepo, jwtMgr, redisClient, nil, nil, slog.Default(), testRefreshTTL)
 
 	return &fixture{
 		svc:     svc,

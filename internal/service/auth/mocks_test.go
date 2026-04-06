@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"auth-service/internal/domain/models"
+	auditRepo "auth-service/internal/repository/audit"
 
 	"github.com/stretchr/testify/mock"
 )
@@ -67,4 +68,14 @@ func (m *mockSessionRepo) ListByUserID(ctx context.Context, userID string) ([]*m
 	args := m.Called(ctx, userID)
 	s, _ := args.Get(0).([]*models.Session)
 	return s, args.Error(1)
+}
+
+// mockAuditRepo is a testify mock for the auditRepository interface.
+type mockAuditRepo struct {
+	mock.Mock
+}
+
+func (m *mockAuditRepo) Log(ctx context.Context, e *auditRepo.Event) error {
+	args := m.Called(ctx, e)
+	return args.Error(0)
 }

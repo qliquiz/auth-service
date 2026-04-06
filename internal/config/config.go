@@ -10,12 +10,13 @@ import (
 )
 
 type Config struct {
-	Env     string            `yaml:"env" env:"ENV" env-required:"true"`
-	GRPC    GRPCConfig        `yaml:"grpc"`
-	Gateway GatewayConfig     `yaml:"gateway"`
-	JWT     JWTConfig         `yaml:"jwt"`
-	Redis   redis.RedConfig   `yaml:"redis"`
-	DB      postgres.DbConfig `yaml:"db"`
+	Env      string            `yaml:"env" env:"ENV" env-required:"true"`
+	GRPC     GRPCConfig        `yaml:"grpc"`
+	Gateway  GatewayConfig     `yaml:"gateway"`
+	JWT      JWTConfig         `yaml:"jwt"`
+	Security SecurityConfig    `yaml:"security"`
+	Redis    redis.RedConfig   `yaml:"redis"`
+	DB       postgres.DbConfig `yaml:"db"`
 }
 
 type GRPCConfig struct {
@@ -31,6 +32,30 @@ type JWTConfig struct {
 	Secret     string        `yaml:"secret" env:"JWT_SECRET" env-required:"true"`
 	AccessTTL  time.Duration `yaml:"access_ttl" env:"JWT_ACCESS_TTL" env-default:"15m"`
 	RefreshTTL time.Duration `yaml:"refresh_ttl" env:"JWT_REFRESH_TTL" env-default:"720h"`
+}
+
+// SecurityConfig groups brute-force and rate-limit tunables.
+type SecurityConfig struct {
+	BruteForce BruteForceConfig `yaml:"brute_force"`
+	RateLimit  RateLimitConfig  `yaml:"rate_limit"`
+}
+
+// BruteForceConfig controls per-account failed-login tracking.
+type BruteForceConfig struct {
+	// MaxAttempts is the number of consecutive failures that trigger a lockout.
+	MaxAttempts int `yaml:"max_attempts" env:"BRUTE_FORCE_MAX_ATTEMPTS" env-default:"5"`
+	// Window is the rolling window over which failures are counted.
+	Window time.Duration `yaml:"window" env:"BRUTE_FORCE_WINDOW" env-default:"15m"`
+	// LockoutTTL is how long the account stays locked after the threshold is reached.
+	LockoutTTL time.Duration `yaml:"lockout_ttl" env:"BRUTE_FORCE_LOCKOUT_TTL" env-default:"15m"`
+}
+
+// RateLimitConfig controls per-IP request throttling.
+type RateLimitConfig struct {
+	// GlobalRPM is the maximum requests per minute per IP across all endpoints.
+	GlobalRPM int `yaml:"global_rpm" env:"RATE_LIMIT_GLOBAL_RPM" env-default:"300"`
+	// LoginRPM is the stricter limit applied to Login and Register only.
+	LoginRPM int `yaml:"login_rpm" env:"RATE_LIMIT_LOGIN_RPM" env-default:"20"`
 }
 
 func MustLoad() *Config {
