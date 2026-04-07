@@ -31,7 +31,7 @@ func New(
 	log *slog.Logger,
 	grpcPort int,
 	gatewayPort int,
-	//timeout time.Duration,
+	grpcTimeout time.Duration,
 	jwtCfg config.JWTConfig,
 	secCfg config.SecurityConfig,
 	env string,
@@ -54,6 +54,7 @@ func New(
 	loginLimiter := ratelimit.New(redisClient, secCfg.RateLimit.LoginRPM, time.Minute)
 
 	grpcApplication := grpcApp.New(service, log, grpcPort,
+		grpc.ConnectionTimeout(grpcTimeout),
 		grpc.ChainUnaryInterceptor(
 			interceptor.Logging(log),
 			interceptor.RateLimit(globalLimiter, loginLimiter, log),

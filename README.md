@@ -46,6 +46,7 @@ gRPC).
 ENV=local               # local (pretty-логи), dev/prod (JSON)
 GRPC_PORT=8082
 GATEWAY_PORT=8080
+GRPC_TIMEOUT=5s         # deadline for completing new connection handshakes
 
 JWT_SECRET=your-secret-min-32-chars
 JWT_ACCESS_TTL=15m

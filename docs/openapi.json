@@ -433,7 +433,7 @@
                 },
                 "example": {
                   "code": 8,
-                  "message": "too many login attempts from your IP, try again in 1m0s",
+                  "message": "too many requests from your IP, try again in 1m0s",
                   "details": []
                 }
               }

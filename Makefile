@@ -39,13 +39,13 @@ db:
 	@echo "upping the DB in Docker..."
 	@docker-compose up --build -d db
 
-migrate-up: db
+migrate-up:
 	@echo "applying migrations..."
 	@go run ./cmd/migrator \
 		--migrations-path=./migrations \
 		--command=up
 
-migrate-down: db
+migrate-down:
 	@echo "rolling the latest migration back..."
 	@go run ./cmd/migrator \
 		--migrations-path=./migrations \
