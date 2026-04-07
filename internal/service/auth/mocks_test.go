@@ -72,16 +72,6 @@ func (m *mockSessionRepo) ListByUserID(ctx context.Context, userID string) ([]*m
 	return s, args.Error(1)
 }
 
-// mockAuditRepo is a testify mock for the auditRepository interface.
-type mockAuditRepo struct {
-	mock.Mock
-}
-
-func (m *mockAuditRepo) Log(ctx context.Context, e *auditRepo.Event) error {
-	args := m.Called(ctx, e)
-	return args.Error(0)
-}
-
 // auditSink is a lightweight, goroutine-safe audit repo that captures events
 // over a buffered channel. Use next() to retrieve the next event or fail fast.
 type auditSink struct {
