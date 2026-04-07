@@ -814,6 +814,37 @@ func TestRegister_AuditEventLogged(t *testing.T) {
 	assert.Equal(t, "user-001", *e.UserID)
 }
 
+func TestLogout_AuditEventLogged_WithUserID(t *testing.T) {
+	t.Parallel()
+	f, sink := newFixtureWithAudit(t)
+	user := fakeUser(t)
+
+	// Login to populate the Redis session cache.
+	f.uRepo.On("GetByEmail", mock.Anything, user.Email).Return(user, nil)
+	f.sRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.Session")).Return(nil)
+
+	loginResp, err := f.svc.Login(context.Background(), &api.LoginRequest{
+		Email:    user.Email,
+		Password: "password123",
+	})
+	require.NoError(t, err)
+	_ = sink.next(t) // consume the login audit event
+
+	// Logout using the refresh token from the login response.
+	hashedToken := token.Hash(loginResp.RefreshToken)
+	f.sRepo.On("DeleteByTokenHash", mock.Anything, hashedToken).Return(nil)
+
+	_, err = f.svc.Logout(context.Background(), &api.LogoutRequest{
+		RefreshToken: loginResp.RefreshToken,
+	})
+	require.NoError(t, err)
+
+	e := sink.next(t)
+	assert.Equal(t, auditRepo.EventLogout, e.EventType)
+	require.NotNil(t, e.UserID, "user ID must be populated from Redis cache")
+	assert.Equal(t, user.ID, *e.UserID)
+}
+
 // ── Internal error paths ───────────────────────────────────────────────────────
 
 func TestLogin_InternalError_GetByEmail(t *testing.T) {

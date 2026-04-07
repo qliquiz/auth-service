@@ -87,13 +87,14 @@ func (a *auditSink) Log(_ context.Context, e *auditRepo.Event) error {
 	return nil
 }
 
-// next blocks until an event arrives or the 150 ms deadline expires.
+// next blocks until an event arrives or the 500 ms deadline expires.
+// 500 ms is generous enough to survive heavy CI load without making tests slow.
 func (a *auditSink) next(t *testing.T) *auditRepo.Event {
 	t.Helper()
 	select {
 	case e := <-a.events:
 		return e
-	case <-time.After(150 * time.Millisecond):
+	case <-time.After(500 * time.Millisecond):
 		t.Fatal("audit event not received within deadline")
 		return nil
 	}

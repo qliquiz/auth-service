@@ -45,21 +45,25 @@ func (g *Guard) IsLocked(ctx context.Context, email string) (bool, error) {
 	return n > 0, nil
 }
 
+// luaIncrExpire atomically increments a counter and sets its TTL on the first
+// increment. Without atomicity, a crash between INCR and EXPIRE would leave a
+// counter with no TTL, causing it to persist indefinitely.
+const luaIncrExpire = `
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+  redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return count`
+
 // RecordFailure increments the failure counter for the email.
 // Returns (true, nil) when the threshold is reached and the account is now locked.
 // The caller should still return an Unauthenticated or ResourceExhausted error to the client.
 func (g *Guard) RecordFailure(ctx context.Context, email string) (locked bool, err error) {
 	attemptsKey := attemptsKeyPrefix + email
 
-	count, err := g.redis.Incr(ctx, attemptsKey).Result()
+	count, err := g.redis.Eval(ctx, luaIncrExpire, []string{attemptsKey}, int64(g.window.Seconds())).Int64()
 	if err != nil {
 		return false, fmt.Errorf("bruteforce record: %w", err)
-	}
-
-	// On the first increment start the window TTL.
-	if count == 1 {
-		// Ignore error — the key is already set, worst case it has no TTL.
-		_ = g.redis.Expire(ctx, attemptsKey, g.window).Err()
 	}
 
 	if count >= int64(g.maxAttempts) {
@@ -96,9 +100,5 @@ func (g *Guard) AttemptsRemaining(ctx context.Context, email string) (int, error
 		return 0, fmt.Errorf("bruteforce remaining: %w", err)
 	}
 
-	remaining := g.maxAttempts - count
-	if remaining < 0 {
-		remaining = 0
-	}
-	return remaining, nil
+	return max(g.maxAttempts-count, 0), nil
 }

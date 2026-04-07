@@ -38,7 +38,8 @@ func RateLimit(globalLimiter, loginLimiter *ratelimit.Limiter, log *slog.Logger)
 		if allowed, err := globalLimiter.Allow(ctx, ip); err != nil {
 			log.Warn("rate limit check failed, failing open", slog.String("err", err.Error()))
 		} else if !allowed {
-			return nil, status.Errorf(codes.ResourceExhausted, "too many requests, slow down")
+			return nil, status.Errorf(codes.ResourceExhausted,
+				"too many requests from your IP, try again in %v", globalLimiter.Window())
 		}
 
 		// Stricter limit for credential endpoints.
@@ -57,12 +58,22 @@ func RateLimit(globalLimiter, loginLimiter *ratelimit.Limiter, log *slog.Logger)
 
 // extractIP reads the client IP from X-Forwarded-For metadata (set by gRPC-Gateway
 // when the request comes via HTTP) or falls back to the gRPC peer address.
+//
+// We take the rightmost (last) IP in the XFF list because gRPC-Gateway appends
+// the actual client address it received, so the last entry is the one added by
+// our own trusted proxy and cannot be forged by the client. The leftmost entries
+// are client-supplied and must not be trusted for rate-limiting decisions.
+// This assumption holds when the service sits behind exactly one trusted proxy
+// (i.e., gRPC-Gateway). If there are additional proxies in front, adjust
+// accordingly by trusting the last N entries from the right.
 func extractIP(ctx context.Context) string {
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		if xff := md.Get("x-forwarded-for"); len(xff) > 0 {
-			ip := strings.TrimSpace(strings.Split(xff[0], ",")[0])
-			if ip != "" {
-				return ip
+			parts := strings.Split(xff[0], ",")
+			for i := len(parts) - 1; i >= 0; i-- {
+				if ip := strings.TrimSpace(parts[i]); ip != "" {
+					return ip
+				}
 			}
 		}
 	}

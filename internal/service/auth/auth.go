@@ -356,6 +356,14 @@ func (s *AuthService) Logout(ctx context.Context, req *api.LogoutRequest) (*api.
 
 	tokenHash := token.Hash(req.RefreshToken)
 
+	// Resolve the user ID for audit purposes before deleting. The cache is the
+	// cheapest source; if it misses we leave userID nil rather than doing an
+	// extra DB round-trip on the hot path.
+	var userID *string
+	if cached, err := s.getCachedSession(ctx, tokenHash); err == nil {
+		userID = strPtr(cached.UserID)
+	}
+
 	if err := s.sessionRepo.DeleteByTokenHash(ctx, tokenHash); err != nil {
 		s.log.With(slog.String("op", op)).Error("delete session", slog.String("err", err.Error()))
 		return nil, status.Error(codes.Internal, "internal error")
@@ -363,7 +371,7 @@ func (s *AuthService) Logout(ctx context.Context, req *api.LogoutRequest) (*api.
 	s.deleteSessionFromCache(ctx, tokenHash)
 
 	ipAddr, userAgent := extractClientInfo(ctx)
-	s.logAudit(nil, auditRepo.EventLogout, ipAddr, userAgent, nil)
+	s.logAudit(userID, auditRepo.EventLogout, ipAddr, userAgent, nil)
 
 	return &api.LogoutResponse{}, nil
 }
@@ -485,7 +493,15 @@ func (s *AuthService) extractUserIDFromCtx(ctx context.Context) (string, error) 
 func extractClientInfo(ctx context.Context) (ipAddress, userAgent string) {
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		if xff := md.Get("x-forwarded-for"); len(xff) > 0 {
-			ipAddress = strings.TrimSpace(strings.Split(xff[0], ",")[0])
+			// Use the rightmost IP — appended by gRPC-Gateway (our trusted proxy).
+			// The leftmost IPs are client-supplied and must not be trusted.
+			parts := strings.Split(xff[0], ",")
+			for i := len(parts) - 1; i >= 0; i-- {
+				if ip := strings.TrimSpace(parts[i]); ip != "" {
+					ipAddress = ip
+					break
+				}
+			}
 		}
 		if ua := md.Get("user-agent"); len(ua) > 0 {
 			userAgent = ua[0]

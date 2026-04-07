@@ -126,6 +126,39 @@ func TestRateLimit_IsolatesIPs(t *testing.T) {
 	require.NoError(t, err, "different IP must not be affected by another IP's rate limit")
 }
 
+// TestRateLimit_XFFRightmostIPUsed verifies that when X-Forwarded-For contains
+// multiple IPs (client-supplied prefix + proxy-appended suffix), the interceptor
+// uses the rightmost IP — the one added by our trusted proxy — for rate limiting.
+// The leftmost IP is client-controlled and must not be trusted.
+func TestRateLimit_XFFRightmostIPUsed(t *testing.T) {
+	t.Parallel()
+	// Limit is 1 request per window.
+	mw := newRateLimitMW(t, 1, 100)
+
+	// Client sends a spoofed XFF prefix; the proxy appends the real client IP.
+	// The full header becomes "fake_ip, real_client_ip".
+	spoofedXFF := "10.0.0.1, 1.2.3.4" // real IP is the rightmost: 1.2.3.4
+	md := metadata.Pairs("x-forwarded-for", spoofedXFF)
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+
+	// First request: allowed (counter on 1.2.3.4 → 1).
+	_, err := mw(ctx, nil, infoFor("ValidateToken"), okHandler)
+	require.NoError(t, err)
+
+	// Second request with same real IP (1.2.3.4) must be blocked.
+	_, err = mw(ctx, nil, infoFor("ValidateToken"), okHandler)
+	require.Error(t, err)
+	assert.Equal(t, codes.ResourceExhausted, status.Code(err))
+
+	// A request spoofing the real IP but with a different actual IP (9.9.9.9)
+	// must be treated as a separate client and allowed.
+	spoofedAsBlocked := "1.2.3.4, 9.9.9.9"
+	md2 := metadata.Pairs("x-forwarded-for", spoofedAsBlocked)
+	ctx2 := metadata.NewIncomingContext(context.Background(), md2)
+	_, err = mw(ctx2, nil, infoFor("ValidateToken"), okHandler)
+	require.NoError(t, err, "9.9.9.9 must not be blocked because 1.2.3.4 is exhausted")
+}
+
 // TestRateLimit_FailsOpenOnRedisError verifies that when Redis is unavailable the
 // interceptor lets requests through rather than blocking all traffic.
 func TestRateLimit_FailsOpenOnRedisError(t *testing.T) {
