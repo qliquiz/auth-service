@@ -33,7 +33,10 @@
     "schemas": {
       "RegisterRequest": {
         "type": "object",
-        "required": ["email", "password"],
+        "required": [
+          "email",
+          "password"
+        ],
         "properties": {
           "email": {
             "type": "string",
@@ -63,7 +66,10 @@
       },
       "LoginRequest": {
         "type": "object",
-        "required": ["email", "password"],
+        "required": [
+          "email",
+          "password"
+        ],
         "properties": {
           "email": {
             "type": "string",
@@ -101,7 +107,9 @@
       },
       "ValidateTokenRequest": {
         "type": "object",
-        "required": ["token"],
+        "required": [
+          "token"
+        ],
         "properties": {
           "token": {
             "type": "string",
@@ -125,15 +133,21 @@
           },
           "roles": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "Roles embedded in the token claims.",
-            "example": ["user"]
+            "example": [
+              "user"
+            ]
           }
         }
       },
       "RefreshTokenRequest": {
         "type": "object",
-        "required": ["refreshToken"],
+        "required": [
+          "refreshToken"
+        ],
         "properties": {
           "refreshToken": {
             "type": "string",
@@ -164,7 +178,9 @@
       },
       "LogoutRequest": {
         "type": "object",
-        "required": ["refreshToken"],
+        "required": [
+          "refreshToken"
+        ],
         "properties": {
           "refreshToken": {
             "type": "string",
@@ -235,7 +251,9 @@
         "properties": {
           "sessions": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/SessionInfo" },
+            "items": {
+              "$ref": "#/components/schemas/SessionInfo"
+            },
             "description": "All active sessions for the authenticated user, ordered by `last_used_at` descending."
           }
         }
@@ -259,7 +277,9 @@
           },
           "details": {
             "type": "array",
-            "items": { "type": "object" },
+            "items": {
+              "type": "object"
+            },
             "description": "Additional error details (may be empty)."
           }
         }
@@ -270,7 +290,9 @@
         "description": "Missing, expired, or invalid credentials.",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
             "example": {
               "code": 16,
               "message": "invalid credentials",
@@ -283,7 +305,9 @@
         "description": "The requested resource does not exist or belongs to another user.",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
             "example": {
               "code": 5,
               "message": "session not found",
@@ -296,7 +320,9 @@
         "description": "Unexpected server error.",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
             "example": {
               "code": 13,
               "message": "internal error",
@@ -310,7 +336,9 @@
   "paths": {
     "/v1/auth/register": {
       "post": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "Register a new user",
         "description": "Creates a new user account.\n\nThe password is hashed with **argon2id** (`m=65536, t=3, p=4`) before storage — the plain-text password is never persisted.\n\n**Errors:**\n- `400 Bad Request` — email format invalid or password shorter than 8 characters\n- `409 Conflict` — email address is already registered",
         "operationId": "Register",
@@ -318,7 +346,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/RegisterRequest" },
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              },
               "example": {
                 "email": "alice@example.com",
                 "password": "s3cureP@ssw0rd"
@@ -331,7 +361,9 @@
             "description": "User created successfully.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/RegisterResponse" },
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterResponse"
+                },
                 "example": {
                   "userId": "550e8400-e29b-41d4-a716-446655440000"
                 }
@@ -339,18 +371,36 @@
             }
           },
           "400": {
-            "description": "Validation error — invalid email format or password too short.",
+            "description": "Validation error — invalid email format or password too weak (min 8 chars, ≥1 letter, ≥1 digit).",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
                 "examples": {
                   "invalid_email": {
                     "summary": "Invalid email",
-                    "value": { "code": 3, "message": "invalid email format", "details": [] }
+                    "value": {
+                      "code": 3,
+                      "message": "invalid email format",
+                      "details": []
+                    }
                   },
                   "weak_password": {
-                    "summary": "Password too short",
-                    "value": { "code": 3, "message": "password must be at least 8 characters", "details": [] }
+                    "summary": "Weak password",
+                    "value": {
+                      "code": 3,
+                      "message": "password must be at least 8 characters, contain at least one letter and one digit",
+                      "details": []
+                    }
+                  },
+                  "no_digit": {
+                    "summary": "Password has no digit",
+                    "value": {
+                      "code": 3,
+                      "message": "password must contain at least one digit",
+                      "details": []
+                    }
                   }
                 }
               }
@@ -360,18 +410,43 @@
             "description": "Email address is already registered.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
-                "example": { "code": 6, "message": "email already registered", "details": [] }
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": 6,
+                  "message": "email already registered",
+                  "details": []
+                }
               }
             }
           },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "description": "Too many requests — IP rate limit exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": 8,
+                  "message": "too many requests from your IP, try again in 1m0s",
+                  "details": []
+                }
+              }
+            }
+          }
         }
       }
     },
     "/v1/auth/login": {
       "post": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "Log in and obtain tokens",
         "description": "Authenticates a user and opens a new session.\n\nReturns an **access token** (JWT, 15 min) and a **refresh token** (opaque, 30 days). Store the refresh token in HttpOnly cookie or secure device storage.\n\nThe optional `device_id` is stored with the session and displayed in the sessions list — useful for showing users which devices are logged in. Falls back to the `User-Agent` header if omitted.\n\n**Errors:**\n- `401 Unauthenticated` — email not found or password incorrect (both return the same error to prevent user enumeration)",
         "operationId": "Login",
@@ -379,7 +454,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/LoginRequest" },
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              },
               "examples": {
                 "web": {
                   "summary": "Web browser login",
@@ -405,7 +482,9 @@
             "description": "Login successful. Both tokens issued.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/LoginResponse" },
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                },
                 "example": {
                   "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJlbWFpbCI6ImFsaWNlQGV4YW1wbGUuY29tIiwicm9sZXMiOlsidXNlciJdLCJleHAiOjE3MDAwMDAwMDB9.abc123",
                   "refreshToken": "v2.local.Tdm3xyzABC..."
@@ -413,14 +492,48 @@
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthenticated" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "description": "Too many requests — IP rate limit exceeded or account temporarily locked after too many failed login attempts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "rate_limit": {
+                    "summary": "IP rate limit exceeded",
+                    "value": {
+                      "code": 8,
+                      "message": "too many login attempts from your IP, try again in 1m0s",
+                      "details": []
+                    }
+                  },
+                  "account_locked": {
+                    "summary": "Account locked (brute-force)",
+                    "value": {
+                      "code": 8,
+                      "message": "account temporarily locked due to too many failed attempts, try again later",
+                      "details": []
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
     "/v1/auth/validate": {
       "post": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "Validate an access token",
         "description": "Performs a **stateless** JWT signature and expiry check. Does not touch the database or Redis.\n\nDesigned for **inter-service** use — a downstream service can call this endpoint to verify a token without knowing the JWT secret.\n\n> This endpoint always returns HTTP 200. Inspect the `valid` field to determine whether the token is acceptable.",
         "operationId": "ValidateToken",
@@ -428,7 +541,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/ValidateTokenRequest" },
+              "schema": {
+                "$ref": "#/components/schemas/ValidateTokenRequest"
+              },
               "example": {
                 "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
               }
@@ -440,14 +555,18 @@
             "description": "Validation result. Check the `valid` field — this endpoint never returns a non-200 status for invalid tokens.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ValidateTokenResponse" },
+                "schema": {
+                  "$ref": "#/components/schemas/ValidateTokenResponse"
+                },
                 "examples": {
                   "valid": {
                     "summary": "Valid token",
                     "value": {
                       "valid": true,
                       "userId": "550e8400-e29b-41d4-a716-446655440000",
-                      "roles": ["user"]
+                      "roles": [
+                        "user"
+                      ]
                     }
                   },
                   "invalid": {
@@ -462,13 +581,17 @@
               }
             }
           },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
         }
       }
     },
     "/v1/auth/refresh": {
       "post": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "Rotate tokens",
         "description": "Exchanges a valid refresh token for a **new access token + new refresh token**.\n\n**Token rotation:** the submitted refresh token is immediately deleted from the database and Redis — it cannot be reused. Replace it with the new one returned in the response.\n\nIf the refresh token is expired, it is deleted automatically and `401` is returned.\n\n**Redis cache:** on a cache hit the DB is not queried. On cache miss the DB is the fallback source of truth.\n\n**Errors:**\n- `401 Unauthenticated` — token not found, already rotated, or expired",
         "operationId": "RefreshToken",
@@ -476,7 +599,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/RefreshTokenRequest" },
+              "schema": {
+                "$ref": "#/components/schemas/RefreshTokenRequest"
+              },
               "example": {
                 "refreshToken": "v2.local.Tdm3..."
               }
@@ -488,7 +613,9 @@
             "description": "New token pair issued. Discard the old refresh token immediately.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/RefreshTokenResponse" },
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshTokenResponse"
+                },
                 "example": {
                   "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.newPayload...",
                   "refreshToken": "v2.local.newToken..."
@@ -500,27 +627,41 @@
             "description": "Refresh token is invalid, has already been rotated, or has expired.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
                 "examples": {
                   "not_found": {
                     "summary": "Token not found or already rotated",
-                    "value": { "code": 16, "message": "invalid refresh token", "details": [] }
+                    "value": {
+                      "code": 16,
+                      "message": "invalid refresh token",
+                      "details": []
+                    }
                   },
                   "expired": {
                     "summary": "Token expired",
-                    "value": { "code": 16, "message": "refresh token expired", "details": [] }
+                    "value": {
+                      "code": 16,
+                      "message": "refresh token expired",
+                      "details": []
+                    }
                   }
                 }
               }
             }
           },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
         }
       }
     },
     "/v1/auth/logout": {
       "post": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "Terminate the current session",
         "description": "Deletes the session identified by the provided refresh token from both PostgreSQL and the Redis cache.\n\nThe access token that was paired with this session remains technically valid until its TTL expires (max 15 min) — revoke it on the client side immediately.\n\nThis endpoint is **idempotent** — calling it with an already-invalidated token still returns 200.",
         "operationId": "Logout",
@@ -528,7 +669,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/LogoutRequest" },
+              "schema": {
+                "$ref": "#/components/schemas/LogoutRequest"
+              },
               "example": {
                 "refreshToken": "v2.local.Tdm3..."
               }
@@ -540,27 +683,39 @@
             "description": "Session terminated.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/LogoutResponse" },
+                "schema": {
+                  "$ref": "#/components/schemas/LogoutResponse"
+                },
                 "example": {}
               }
             }
           },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
         }
       }
     },
     "/v1/auth/logout-all": {
       "post": {
-        "tags": ["Sessions"],
+        "tags": [
+          "Sessions"
+        ],
         "summary": "Revoke all sessions",
         "description": "Deletes **all active sessions** for the authenticated user — including the session used to make this request.\n\nAll corresponding Redis cache keys are explicitly deleted (no stale-cache window). Any existing refresh tokens are immediately invalidated.\n\n**Use case:** compromised account, password change, \"log out everywhere\" button.\n\n**Errors:**\n- `401 Unauthenticated` — missing or invalid `Authorization` header",
         "operationId": "LogoutAll",
-        "security": [{ "BearerAuth": [] }],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/LogoutAllRequest" },
+              "schema": {
+                "$ref": "#/components/schemas/LogoutAllRequest"
+              },
               "example": {}
             }
           }
@@ -570,31 +725,45 @@
             "description": "All sessions revoked.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/LogoutAllResponse" },
+                "schema": {
+                  "$ref": "#/components/schemas/LogoutAllResponse"
+                },
                 "example": {
                   "sessionsRevoked": 3
                 }
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthenticated" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
         }
       }
     },
     "/v1/auth/sessions": {
       "get": {
-        "tags": ["Sessions"],
+        "tags": [
+          "Sessions"
+        ],
         "summary": "List active sessions",
         "description": "Returns all active sessions for the authenticated user, ordered by `last_used_at` descending (most recently used first).\n\nEach session includes the device identifier, IP address, and User-Agent — useful for building a \"logged-in devices\" screen.\n\n**Errors:**\n- `401 Unauthenticated` — missing or invalid `Authorization` header",
         "operationId": "ListSessions",
-        "security": [{ "BearerAuth": [] }],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "Session list returned successfully.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ListSessionsResponse" },
+                "schema": {
+                  "$ref": "#/components/schemas/ListSessionsResponse"
+                },
                 "example": {
                   "sessions": [
                     {
@@ -618,18 +787,28 @@
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthenticated" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
         }
       }
     },
     "/v1/auth/sessions/{sessionId}": {
       "delete": {
-        "tags": ["Sessions"],
+        "tags": [
+          "Sessions"
+        ],
         "summary": "Revoke a specific session",
         "description": "Deletes a single session by its ID. The session must belong to the authenticated user — attempting to revoke another user's session returns `404` (ownership is enforced at the DB level via `WHERE id = $1 AND user_id = $2`).\n\nThe corresponding Redis cache key is explicitly deleted.\n\n**Use case:** revoke a session from a lost or compromised device while keeping other sessions active.\n\n**Errors:**\n- `401 Unauthenticated` — missing or invalid `Authorization` header\n- `404 Not Found` — session does not exist or belongs to a different user",
         "operationId": "RevokeSession",
-        "security": [{ "BearerAuth": [] }],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "sessionId",
@@ -648,14 +827,22 @@
             "description": "Session revoked successfully.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/RevokeSessionResponse" },
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeSessionResponse"
+                },
                 "example": {}
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthenticated" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
         }
       }
     }

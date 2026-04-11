@@ -3,9 +3,12 @@ package auth
 import (
 	"auth-service/gen/api"
 	"auth-service/internal/domain/models"
+	"auth-service/internal/lib/bruteforce"
 	jwtlib "auth-service/internal/lib/jwt"
 	"auth-service/internal/lib/password"
 	"auth-service/internal/lib/token"
+	"auth-service/internal/lib/validate"
+	auditRepo "auth-service/internal/repository/audit"
 	sessionRepo "auth-service/internal/repository/session"
 	userRepo "auth-service/internal/repository/user"
 	"context"
@@ -44,6 +47,11 @@ type sessionRepository interface {
 	ListByUserID(ctx context.Context, userID string) ([]*models.Session, error)
 }
 
+// auditRepository is the interface the service uses to write security audit events.
+type auditRepository interface {
+	Log(ctx context.Context, e *auditRepo.Event) error
+}
+
 // redisSession is the value stored in Redis for a refresh token.
 type redisSession struct {
 	SessionID string    `json:"sid"`
@@ -57,6 +65,8 @@ type AuthService struct {
 	api.UnimplementedAuthServiceServer
 	userRepo    userRepository
 	sessionRepo sessionRepository
+	auditRepo   auditRepository   // nil = audit disabled
+	bruteGuard  *bruteforce.Guard // nil = brute-force protection disabled
 	jwtManager  *jwtlib.Manager
 	redis       *redis.Client
 	log         *slog.Logger
@@ -68,12 +78,16 @@ func New(
 	sessionRepository sessionRepository,
 	jwtManager *jwtlib.Manager,
 	redisClient *redis.Client,
+	auditRepository auditRepository,
+	bruteGuard *bruteforce.Guard,
 	log *slog.Logger,
 	refreshTTL time.Duration,
 ) *AuthService {
 	return &AuthService{
 		userRepo:    userRepository,
 		sessionRepo: sessionRepository,
+		auditRepo:   auditRepository,
+		bruteGuard:  bruteGuard,
 		jwtManager:  jwtManager,
 		redis:       redisClient,
 		log:         log,
@@ -91,10 +105,10 @@ func (s *AuthService) Register(ctx context.Context, req *api.RegisterRequest) (*
 	const op = "auth.Register"
 	log := s.log.With(slog.String("op", op), slog.String("email", req.Email))
 
-	if err := validateEmail(req.Email); err != nil {
+	if err := validate.Email(req.Email); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	if err := validatePassword(req.Password); err != nil {
+	if err := validate.Password(req.Password); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
@@ -113,6 +127,10 @@ func (s *AuthService) Register(ctx context.Context, req *api.RegisterRequest) (*
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 
+	ipAddr, userAgent := extractClientInfo(ctx)
+	s.logAudit(strPtr(user.ID), auditRepo.EventRegister, ipAddr, userAgent,
+		map[string]string{"email": user.Email})
+
 	log.Info("user registered", slog.String("user_id", user.ID))
 	return &api.RegisterResponse{UserId: user.ID}, nil
 }
@@ -123,9 +141,27 @@ func (s *AuthService) Login(ctx context.Context, req *api.LoginRequest) (*api.Lo
 	const op = "auth.Login"
 	log := s.log.With(slog.String("op", op), slog.String("email", req.Email))
 
+	ipAddr, userAgent := extractClientInfo(ctx)
+
+	// Brute-force: check lockout before any DB lookup.
+	if s.bruteGuard != nil {
+		locked, err := s.bruteGuard.IsLocked(ctx, req.Email)
+		if err != nil {
+			log.Error("check brute force", slog.String("err", err.Error()))
+			// Fail open: do not block legitimate users if Redis is temporarily down.
+		} else if locked {
+			s.logAudit(nil, auditRepo.EventLoginBlocked, ipAddr, userAgent,
+				map[string]string{"email": req.Email})
+			return nil, status.Error(codes.ResourceExhausted,
+				"account temporarily locked due to too many failed attempts, try again later")
+		}
+	}
+
 	user, err := s.userRepo.GetByEmail(ctx, req.Email)
 	if err != nil {
 		if errors.Is(err, userRepo.ErrNotFound) {
+			s.logAudit(nil, auditRepo.EventLoginFailure, ipAddr, userAgent,
+				map[string]string{"email": req.Email})
 			return nil, status.Error(codes.Unauthenticated, "invalid credentials")
 		}
 		log.Error("get user", slog.String("err", err.Error()))
@@ -138,7 +174,24 @@ func (s *AuthService) Login(ctx context.Context, req *api.LoginRequest) (*api.Lo
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 	if !match {
+		if s.bruteGuard != nil {
+			if wasLocked, bErr := s.bruteGuard.RecordFailure(ctx, req.Email); bErr != nil {
+				log.Error("record brute force failure", slog.String("err", bErr.Error()))
+			} else if wasLocked {
+				s.logAudit(strPtr(user.ID), auditRepo.EventLoginBlocked, ipAddr, userAgent,
+					map[string]string{"email": req.Email})
+				return nil, status.Error(codes.ResourceExhausted,
+					"account temporarily locked due to too many failed attempts, try again later")
+			}
+		}
+		s.logAudit(strPtr(user.ID), auditRepo.EventLoginFailure, ipAddr, userAgent,
+			map[string]string{"email": req.Email})
 		return nil, status.Error(codes.Unauthenticated, "invalid credentials")
+	}
+
+	// Reset brute-force counter on successful authentication.
+	if s.bruteGuard != nil {
+		s.bruteGuard.Reset(ctx, req.Email)
 	}
 
 	accessToken, err := s.jwtManager.GenerateAccessToken(user.ID, user.Email, []string{"user"})
@@ -153,7 +206,6 @@ func (s *AuthService) Login(ctx context.Context, req *api.LoginRequest) (*api.Lo
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 
-	ipAddr, userAgent := extractClientInfo(ctx)
 	deviceID := req.DeviceId
 	if deviceID == "" {
 		deviceID = userAgent
@@ -180,6 +232,9 @@ func (s *AuthService) Login(ctx context.Context, req *api.LoginRequest) (*api.Lo
 		DeviceID:  deviceID,
 		ExpiresAt: sess.ExpiresAt,
 	})
+
+	s.logAudit(strPtr(user.ID), auditRepo.EventLoginSuccess, ipAddr, userAgent,
+		map[string]string{"email": user.Email, "device_id": deviceID, "session_id": sess.ID})
 
 	log.Info("user logged in", slog.String("user_id", user.ID), slog.String("session_id", sess.ID))
 	return &api.LoginResponse{
@@ -285,6 +340,9 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *api.RefreshTokenReq
 		ExpiresAt: newSess.ExpiresAt,
 	})
 
+	s.logAudit(strPtr(cached.UserID), auditRepo.EventTokenRefresh, ipAddr, userAgent,
+		map[string]string{"session_id": newSess.ID})
+
 	return &api.RefreshTokenResponse{
 		AccessToken:  newAccessToken,
 		RefreshToken: newPlain,
@@ -298,11 +356,22 @@ func (s *AuthService) Logout(ctx context.Context, req *api.LogoutRequest) (*api.
 
 	tokenHash := token.Hash(req.RefreshToken)
 
+	// Resolve the user ID for audit purposes before deleting. The cache is the
+	// cheapest source; if it misses we leave userID nil rather than doing an
+	// extra DB round-trip on the hot path.
+	var userID *string
+	if cached, err := s.getCachedSession(ctx, tokenHash); err == nil {
+		userID = strPtr(cached.UserID)
+	}
+
 	if err := s.sessionRepo.DeleteByTokenHash(ctx, tokenHash); err != nil {
 		s.log.With(slog.String("op", op)).Error("delete session", slog.String("err", err.Error()))
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 	s.deleteSessionFromCache(ctx, tokenHash)
+
+	ipAddr, userAgent := extractClientInfo(ctx)
+	s.logAudit(userID, auditRepo.EventLogout, ipAddr, userAgent, nil)
 
 	return &api.LogoutResponse{}, nil
 }
@@ -327,6 +396,10 @@ func (s *AuthService) LogoutAll(ctx context.Context, _ *api.LogoutAllRequest) (*
 	for _, h := range hashes {
 		s.deleteSessionFromCache(ctx, h)
 	}
+
+	ipAddr, userAgent := extractClientInfo(ctx)
+	s.logAudit(strPtr(userID), auditRepo.EventLogoutAll, ipAddr, userAgent,
+		map[string]string{"sessions_revoked": fmt.Sprintf("%d", len(hashes))})
 
 	log.Info("all sessions revoked", slog.String("user_id", userID), slog.Int("count", len(hashes)))
 	return &api.LogoutAllResponse{SessionsRevoked: int32(len(hashes))}, nil
@@ -385,6 +458,10 @@ func (s *AuthService) RevokeSession(ctx context.Context, req *api.RevokeSessionR
 	}
 	s.deleteSessionFromCache(ctx, tokenHash)
 
+	ipAddr, userAgent := extractClientInfo(ctx)
+	s.logAudit(strPtr(userID), auditRepo.EventSessionRevoke, ipAddr, userAgent,
+		map[string]string{"session_id": req.SessionId})
+
 	return &api.RevokeSessionResponse{}, nil
 }
 
@@ -416,7 +493,15 @@ func (s *AuthService) extractUserIDFromCtx(ctx context.Context) (string, error) 
 func extractClientInfo(ctx context.Context) (ipAddress, userAgent string) {
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		if xff := md.Get("x-forwarded-for"); len(xff) > 0 {
-			ipAddress = strings.TrimSpace(strings.Split(xff[0], ",")[0])
+			// Use the rightmost IP — appended by gRPC-Gateway (our trusted proxy).
+			// The leftmost IPs are client-supplied and must not be trusted.
+			parts := strings.Split(xff[0], ",")
+			for i := len(parts) - 1; i >= 0; i-- {
+				if ip := strings.TrimSpace(parts[i]); ip != "" {
+					ipAddress = ip
+					break
+				}
+			}
 		}
 		if ua := md.Get("user-agent"); len(ua) > 0 {
 			userAgent = ua[0]
@@ -475,21 +560,25 @@ func (s *AuthService) deleteSessionFromCache(ctx context.Context, tokenHash stri
 	s.redis.Del(ctx, redisSessionPrefix+tokenHash)
 }
 
-// ── Validation ────────────────────────────────────────────────────────────────
-
-func validateEmail(email string) error {
-	if email == "" {
-		return fmt.Errorf("email is required")
+// logAudit writes a security event asynchronously so it doesn't block the request path.
+func (s *AuthService) logAudit(userID *string, eventType auditRepo.EventType, ip, ua string, meta map[string]string) {
+	if s.auditRepo == nil {
+		return
 	}
-	if !strings.Contains(email, "@") || !strings.Contains(email, ".") {
-		return fmt.Errorf("invalid email format")
-	}
-	return nil
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := s.auditRepo.Log(ctx, &auditRepo.Event{
+			UserID:    userID,
+			EventType: eventType,
+			IPAddress: ip,
+			UserAgent: ua,
+			Metadata:  meta,
+		}); err != nil {
+			s.log.Error("audit log", slog.String("event", string(eventType)), slog.String("err", err.Error()))
+		}
+	}()
 }
 
-func validatePassword(pwd string) error {
-	if len(pwd) < 8 {
-		return fmt.Errorf("password must be at least 8 characters")
-	}
-	return nil
-}
+// strPtr returns a pointer to a string value.
+func strPtr(s string) *string { return &s }

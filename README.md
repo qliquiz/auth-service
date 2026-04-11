@@ -46,6 +46,7 @@ gRPC).
 ENV=local               # local (pretty-логи), dev/prod (JSON)
 GRPC_PORT=8082
 GATEWAY_PORT=8080
+GRPC_TIMEOUT=5s         # deadline for completing new connection handshakes
 
 JWT_SECRET=your-secret-min-32-chars
 JWT_ACCESS_TTL=15m
@@ -60,6 +61,15 @@ POSTGRES_PASSWORD=postgres
 REDIS_HOST=localhost
 REDIS_PORT=6379
 REDIS_PASSWORD=
+
+# Brute-force protection
+BRUTE_FORCE_MAX_ATTEMPTS=5   # failed logins before lockout
+BRUTE_FORCE_WINDOW=15m       # rolling window for counting failures
+BRUTE_FORCE_LOCKOUT_TTL=15m  # how long the account stays locked
+
+# Rate limiting (per IP)
+RATE_LIMIT_GLOBAL_RPM=300    # max requests/min across all endpoints
+RATE_LIMIT_LOGIN_RPM=20      # stricter limit for Login and Register
 ```
 
 > Внутри Docker: `POSTGRES_HOST=db`, `REDIS_HOST=redis`.
@@ -68,27 +78,13 @@ REDIS_PASSWORD=
 
 ## Быстрый старт
 
-### Docker (всё в контейнерах)
-
 ```bash
-make compose
+make compose     # PostgreSQL + Redis в Docker
+make migrate-up  # применить миграции (один раз при первом запуске)
+make run         # собрать бинарник и запустить приложение локально
 ```
 
-Поднимает PostgreSQL, Redis и приложение. Миграции применяются автоматически.
-
-### Локальная разработка
-
-```bash
-make run-with-db-in-docker   # DB в Docker, приложение локально
-```
-
-Или пошагово:
-
-```bash
-make db          # PostgreSQL + Redis в Docker
-make migrate-up  # применить миграции
-make run         # собрать и запустить
-```
+`make run` уже включает `make compose`, поэтому повторно поднимать инфраструктуру не нужно.
 
 ---
 
@@ -97,11 +93,12 @@ make run         # собрать и запустить
 ```bash
 make proto              # Перегенерировать gRPC-код из .proto
 make build              # Собрать бинарник → ./bin/auth-service
-make run                # build + migrate-up + запуск
+make compose            # Поднять PostgreSQL + Redis в Docker
+make run                # compose + build + запуск приложения локально
+make migrate-up         # Применить миграции
+make migrate-down       # Откатить последнюю миграцию
 make lint               # golangci-lint
-make migrate-up         # применить миграции
-make migrate-down       # откатить последнюю миграцию
-make clean              # удалить gen/, bin/, coverage-файлы
+make clean              # Удалить gen/, bin/, coverage-файлы
 ```
 
 ---

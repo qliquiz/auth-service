@@ -2,8 +2,11 @@ package auth_test
 
 import (
 	"context"
+	"testing"
+	"time"
 
 	"auth-service/internal/domain/models"
+	auditRepo "auth-service/internal/repository/audit"
 
 	"github.com/stretchr/testify/mock"
 )
@@ -67,4 +70,32 @@ func (m *mockSessionRepo) ListByUserID(ctx context.Context, userID string) ([]*m
 	args := m.Called(ctx, userID)
 	s, _ := args.Get(0).([]*models.Session)
 	return s, args.Error(1)
+}
+
+// auditSink is a lightweight, goroutine-safe audit repo that captures events
+// over a buffered channel. Use next() to retrieve the next event or fail fast.
+type auditSink struct {
+	events chan *auditRepo.Event
+}
+
+func newAuditSink() *auditSink {
+	return &auditSink{events: make(chan *auditRepo.Event, 10)}
+}
+
+func (a *auditSink) Log(_ context.Context, e *auditRepo.Event) error {
+	a.events <- e
+	return nil
+}
+
+// next blocks until an event arrives or the 500 ms deadline expires.
+// 500 ms is generous enough to survive heavy CI load without making tests slow.
+func (a *auditSink) next(t *testing.T) *auditRepo.Event {
+	t.Helper()
+	select {
+	case e := <-a.events:
+		return e
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("audit event not received within deadline")
+		return nil
+	}
 }

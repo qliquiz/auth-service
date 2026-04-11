@@ -56,7 +56,7 @@ func newTestServer(t *testing.T) *testServer {
 
 	uRepo := user.New(pool)
 	sRepo := session.New(pool)
-	svc := auth.New(uRepo, sRepo, jwtMgr, redisClient, slog.Default(), 7*24*time.Hour)
+	svc := auth.New(uRepo, sRepo, jwtMgr, redisClient, nil, nil, slog.Default(), 7*24*time.Hour)
 
 	// Start gRPC server over in-memory bufconn.
 	lis := bufconn.Listen(bufSize)
@@ -126,7 +126,7 @@ func TestE2E_Register_DuplicateEmail(t *testing.T) {
 
 	_, err = srv.client.Register(ctx, &api.RegisterRequest{
 		Email:    "dup@example.com",
-		Password: "differentpassword",
+		Password: "differentpassword1",
 	})
 	require.Error(t, err)
 	assert.Equal(t, codes.AlreadyExists, status.Code(err))
@@ -139,13 +139,13 @@ func TestE2E_Login_WrongPassword(t *testing.T) {
 
 	_, err := srv.client.Register(ctx, &api.RegisterRequest{
 		Email:    "bob@example.com",
-		Password: "correctpassword",
+		Password: "correctpassword1",
 	})
 	require.NoError(t, err)
 
 	_, err = srv.client.Login(ctx, &api.LoginRequest{
 		Email:    "bob@example.com",
-		Password: "wrongpassword",
+		Password: "wrongpassword1",
 	})
 	require.Error(t, err)
 	assert.Equal(t, codes.Unauthenticated, status.Code(err))
