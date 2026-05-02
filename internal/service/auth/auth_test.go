@@ -310,8 +310,7 @@ func TestRefreshToken_Success_CacheHit(t *testing.T) {
 	require.NoError(t, err)
 
 	// Now refresh — should hit Redis, not DB.
-	f.sRepo.On("DeleteByTokenHash", mock.Anything, token.Hash(loginResp.RefreshToken)).Return(nil)
-	f.sRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.Session")).Return(nil)
+	f.sRepo.On("RotateToken", mock.Anything, token.Hash(loginResp.RefreshToken), mock.AnythingOfType("*models.Session")).Return(nil)
 
 	refreshResp, err := f.svc.RefreshToken(context.Background(), &api.RefreshTokenRequest{
 		RefreshToken: loginResp.RefreshToken,
@@ -348,8 +347,7 @@ func TestRefreshToken_Success_CacheMiss_DBFallback(t *testing.T) {
 		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
 	}
 	f.sRepo.On("GetByTokenHash", mock.Anything, hashedToken).Return(dbSession, nil)
-	f.sRepo.On("DeleteByTokenHash", mock.Anything, hashedToken).Return(nil)
-	f.sRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.Session")).Return(nil)
+	f.sRepo.On("RotateToken", mock.Anything, hashedToken, mock.AnythingOfType("*models.Session")).Return(nil)
 
 	resp, err := f.svc.RefreshToken(context.Background(), &api.RefreshTokenRequest{
 		RefreshToken: plainToken,
@@ -410,8 +408,7 @@ func TestRefreshToken_OldTokenInvalidatedAfterRotation(t *testing.T) {
 
 	user := fakeUser(t)
 	f.uRepo.On("GetByEmail", mock.Anything, user.Email).Return(user, nil)
-	// First Create: Login session. Second Create: new session after refresh.
-	f.sRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.Session")).Return(nil).Twice()
+	f.sRepo.On("Create", mock.Anything, mock.AnythingOfType("*models.Session")).Return(nil)
 
 	loginResp, err := f.svc.Login(context.Background(), &api.LoginRequest{
 		Email:    user.Email,
@@ -422,7 +419,7 @@ func TestRefreshToken_OldTokenInvalidatedAfterRotation(t *testing.T) {
 	oldToken := loginResp.RefreshToken
 	oldHash := token.Hash(oldToken)
 
-	f.sRepo.On("DeleteByTokenHash", mock.Anything, oldHash).Return(nil)
+	f.sRepo.On("RotateToken", mock.Anything, oldHash, mock.AnythingOfType("*models.Session")).Return(nil)
 
 	_, err = f.svc.RefreshToken(context.Background(), &api.RefreshTokenRequest{
 		RefreshToken: oldToken,
@@ -875,7 +872,7 @@ func TestLogout_InternalError(t *testing.T) {
 	assert.Equal(t, codes.Internal, status.Code(err))
 }
 
-func TestRefreshToken_InternalError_DeleteSession(t *testing.T) {
+func TestRefreshToken_InternalError_RotateSession(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 
@@ -888,12 +885,34 @@ func TestRefreshToken_InternalError_DeleteSession(t *testing.T) {
 		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
 	}
 	f.sRepo.On("GetByTokenHash", mock.Anything, hashedToken).Return(dbSession, nil)
-	f.sRepo.On("DeleteByTokenHash", mock.Anything, hashedToken).
+	f.sRepo.On("RotateToken", mock.Anything, hashedToken, mock.AnythingOfType("*models.Session")).
 		Return(fmt.Errorf("db error"))
 
 	_, err := f.svc.RefreshToken(context.Background(), &api.RefreshTokenRequest{RefreshToken: plainToken})
 	require.Error(t, err)
 	assert.Equal(t, codes.Internal, status.Code(err))
+}
+
+func TestRefreshToken_ConcurrentReplay_ReturnsUnauthenticated(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	plainToken, hashedToken, _ := token.Generate()
+	dbSession := &models.Session{
+		ID:        "sess-001",
+		UserID:    "user-001",
+		UserEmail: "alice@example.com",
+		TokenHash: hashedToken,
+		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
+	}
+	f.sRepo.On("GetByTokenHash", mock.Anything, hashedToken).Return(dbSession, nil)
+	// Simulates concurrent rotation: the token was already consumed by another request.
+	f.sRepo.On("RotateToken", mock.Anything, hashedToken, mock.AnythingOfType("*models.Session")).
+		Return(sessionRepo.ErrNotFound)
+
+	_, err := f.svc.RefreshToken(context.Background(), &api.RefreshTokenRequest{RefreshToken: plainToken})
+	require.Error(t, err)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
 }
 
 func TestLogoutAll_InternalError(t *testing.T) {
