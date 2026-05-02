@@ -104,7 +104,6 @@ func Register(gRPC *grpc.Server, authService *AuthService) {
 
 func (s *AuthService) Register(ctx context.Context, req *api.RegisterRequest) (*api.RegisterResponse, error) {
 	const op = "auth.Register"
-	log := s.log.With(slog.String("op", op), slog.String("email", req.Email))
 
 	if err := validate.Email(req.Email); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -112,6 +111,9 @@ func (s *AuthService) Register(ctx context.Context, req *api.RegisterRequest) (*
 	if err := validate.Password(req.Password); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+
+	// Log only after validation — avoids writing untrusted/malformed input to logs.
+	log := s.log.With(slog.String("op", op), slog.String("email", req.Email))
 
 	hash, err := password.Hash(req.Password)
 	if err != nil {
@@ -140,6 +142,12 @@ func (s *AuthService) Register(ctx context.Context, req *api.RegisterRequest) (*
 
 func (s *AuthService) Login(ctx context.Context, req *api.LoginRequest) (*api.LoginResponse, error) {
 	const op = "auth.Login"
+
+	if err := validate.Email(req.Email); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// Log only after validation — avoids writing untrusted/malformed input to logs.
 	log := s.log.With(slog.String("op", op), slog.String("email", req.Email))
 
 	ipAddr, userAgent := extractClientInfo(ctx)
@@ -487,7 +495,10 @@ func (s *AuthService) extractUserIDFromCtx(ctx context.Context) (string, error) 
 		return "", status.Error(codes.Unauthenticated, "missing authorization header")
 	}
 
-	tokenStr := strings.TrimPrefix(authHeaders[0], "Bearer ")
+	tokenStr, ok := strings.CutPrefix(authHeaders[0], "Bearer ")
+	if !ok {
+		return "", status.Error(codes.Unauthenticated, "invalid authorization header format")
+	}
 	claims, err := s.jwtManager.ValidateAccessToken(tokenStr)
 	if err != nil {
 		return "", status.Error(codes.Unauthenticated, "invalid access token")

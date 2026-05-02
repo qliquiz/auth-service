@@ -25,7 +25,8 @@ type GRPCConfig struct {
 }
 
 type GatewayConfig struct {
-	Port int `yaml:"port" env:"GATEWAY_PORT" env-default:"8080"`
+	Port       int    `yaml:"port" env:"GATEWAY_PORT" env-default:"8080"`
+	GRPCTarget string `yaml:"grpc_target" env:"GATEWAY_GRPC_TARGET" env-default:""`
 }
 
 type JWTConfig struct {
