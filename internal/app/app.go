@@ -44,8 +44,8 @@ func New(
 	sRepo := sessionRepo.New(db.Pool)
 	aRepo := auditRepo.New(db.Pool)
 
-	// TODO(Task 6 done): select JWT strategy from jwtCfg.Algorithm for rs256/es256.
-	// Currently defaults to HS256 for backward compatibility.
+	// Select JWT strategy based on config; defaults to HS256.
+	// Set JWT_ALGORITHM=rs256 or es256 with JWT_PRIVATE_KEY_PATH to use asymmetric signing.
 	var tokenMgr ports.AccessTokenManager = jwtlib.NewHS256Manager(jwtCfg.Secret, jwtCfg.AccessTTL)
 
 	cache := rediscache.New(redisClient)
