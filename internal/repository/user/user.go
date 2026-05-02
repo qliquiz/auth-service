@@ -1,7 +1,6 @@
 package user
 
 import (
-	"auth-service/internal/domain/models"
 	"context"
 	"errors"
 	"fmt"
@@ -9,6 +8,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"auth-service/internal/domain/models"
+	"auth-service/pkg/ports"
 )
 
 var (
@@ -23,6 +25,8 @@ type UserRepository struct {
 func New(db *pgxpool.Pool) *UserRepository {
 	return &UserRepository{db: db}
 }
+
+var _ ports.UserStore = (*UserRepository)(nil)
 
 func (r *UserRepository) Create(ctx context.Context, email, passwordHash string) (*models.User, error) {
 	const q = `

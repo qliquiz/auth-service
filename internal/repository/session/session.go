@@ -1,13 +1,15 @@
 package session
 
 import (
-	"auth-service/internal/domain/models"
 	"context"
 	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"auth-service/internal/domain/models"
+	"auth-service/pkg/ports"
 )
 
 var ErrNotFound = errors.New("session not found")
@@ -19,6 +21,8 @@ type SessionRepository struct {
 func New(db *pgxpool.Pool) *SessionRepository {
 	return &SessionRepository{db: db}
 }
+
+var _ ports.SessionStore = (*SessionRepository)(nil)
 
 func (r *SessionRepository) Create(ctx context.Context, s *models.Session) error {
 	const q = `
