@@ -69,7 +69,7 @@ type AuthService struct {
 	sessionRepo sessionRepository
 	auditRepo   auditRepository   // nil = audit disabled
 	bruteGuard  *bruteforce.Guard // nil = brute-force protection disabled
-	jwtManager  *jwtlib.Manager
+	jwtManager  *jwtlib.HS256Manager
 	redis       *redis.Client
 	log         *slog.Logger
 	refreshTTL  time.Duration
@@ -78,7 +78,7 @@ type AuthService struct {
 func New(
 	userRepository userRepository,
 	sessionRepository sessionRepository,
-	jwtManager *jwtlib.Manager,
+	jwtManager *jwtlib.HS256Manager,
 	redisClient *redis.Client,
 	auditRepository auditRepository,
 	bruteGuard *bruteforce.Guard,

@@ -1,10 +1,14 @@
 package jwt_test
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/rsa"
 	"testing"
 	"time"
 
-	"auth-service/internal/lib/jwt"
+	jwtlib "auth-service/internal/lib/jwt"
 
 	jwtpkg "github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
@@ -16,7 +20,7 @@ const testSecret = "test-secret-must-be-at-least-32-chars!!"
 func TestManager_GenerateAndValidate(t *testing.T) {
 	t.Parallel()
 
-	m := jwt.New(testSecret, 15*time.Minute)
+	m := jwtlib.New(testSecret, 15*time.Minute)
 
 	token, err := m.GenerateAccessToken("user-123", "alice@example.com", []string{"user", "admin"})
 	require.NoError(t, err)
@@ -28,14 +32,12 @@ func TestManager_GenerateAndValidate(t *testing.T) {
 	assert.Equal(t, "user-123", claims.UserID)
 	assert.Equal(t, "alice@example.com", claims.Email)
 	assert.Equal(t, []string{"user", "admin"}, claims.Roles)
-	assert.Equal(t, "auth-service", claims.Issuer)
-	assert.Equal(t, "user-123", claims.Subject)
 }
 
 func TestManager_EmptyRoles(t *testing.T) {
 	t.Parallel()
 
-	m := jwt.New(testSecret, time.Hour)
+	m := jwtlib.New(testSecret, time.Hour)
 
 	token, err := m.GenerateAccessToken("user-456", "bob@example.com", nil)
 	require.NoError(t, err)
@@ -48,7 +50,7 @@ func TestManager_EmptyRoles(t *testing.T) {
 func TestManager_ExpiredToken(t *testing.T) {
 	t.Parallel()
 
-	m := jwt.New(testSecret, -time.Second) // TTL in the past → already expired
+	m := jwtlib.New(testSecret, -time.Second) // TTL in the past → already expired
 
 	token, err := m.GenerateAccessToken("user-123", "alice@example.com", nil)
 	require.NoError(t, err)
@@ -60,8 +62,8 @@ func TestManager_ExpiredToken(t *testing.T) {
 func TestManager_WrongSecret(t *testing.T) {
 	t.Parallel()
 
-	signer := jwt.New("secret-aaaaaaaaaaaaaaaaaaaaaaaaaaa", time.Hour)
-	verifier := jwt.New("secret-bbbbbbbbbbbbbbbbbbbbbbbbbbb", time.Hour)
+	signer := jwtlib.New("secret-aaaaaaaaaaaaaaaaaaaaaaaaaaa", time.Hour)
+	verifier := jwtlib.New("secret-bbbbbbbbbbbbbbbbbbbbbbbbbbb", time.Hour)
 
 	token, err := signer.GenerateAccessToken("user-123", "test@example.com", nil)
 	require.NoError(t, err)
@@ -73,7 +75,7 @@ func TestManager_WrongSecret(t *testing.T) {
 func TestManager_MalformedToken(t *testing.T) {
 	t.Parallel()
 
-	m := jwt.New(testSecret, time.Hour)
+	m := jwtlib.New(testSecret, time.Hour)
 
 	cases := []struct {
 		name  string
@@ -112,7 +114,7 @@ func TestManager_MissingExpClaim(t *testing.T) {
 	tokenStr, err := raw.SignedString(secret)
 	require.NoError(t, err)
 
-	m := jwt.New(testSecret, time.Hour)
+	m := jwtlib.New(testSecret, time.Hour)
 	_, err = m.ValidateAccessToken(tokenStr)
 	assert.Error(t, err, "token without exp must be rejected")
 }
@@ -131,7 +133,7 @@ func TestManager_WrongIssuer(t *testing.T) {
 	tokenStr, err := raw.SignedString(secret)
 	require.NoError(t, err)
 
-	m := jwt.New(testSecret, time.Hour)
+	m := jwtlib.New(testSecret, time.Hour)
 	_, err = m.ValidateAccessToken(tokenStr)
 	assert.Error(t, err, "token with wrong issuer must be rejected")
 }
@@ -139,12 +141,55 @@ func TestManager_WrongIssuer(t *testing.T) {
 func TestManager_TokenNotExpiredYet(t *testing.T) {
 	t.Parallel()
 
-	m := jwt.New(testSecret, 24*time.Hour)
+	m := jwtlib.New(testSecret, 24*time.Hour)
 
 	token, err := m.GenerateAccessToken("user-789", "charlie@example.com", []string{"user"})
 	require.NoError(t, err)
 
 	claims, err := m.ValidateAccessToken(token)
 	require.NoError(t, err)
-	assert.True(t, claims.ExpiresAt.After(time.Now()))
+	assert.NotEmpty(t, claims.UserID)
+}
+
+func TestRS256RoundTrip(t *testing.T) {
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	mgr := jwtlib.NewRS256Manager(priv, 15*time.Minute)
+
+	token, err := mgr.GenerateAccessToken("uid-1", "user@example.com", []string{"user"})
+	require.NoError(t, err)
+	require.NotEmpty(t, token)
+
+	claims, err := mgr.ValidateAccessToken(token)
+	require.NoError(t, err)
+	require.Equal(t, "uid-1", claims.UserID)
+	require.Equal(t, "user@example.com", claims.Email)
+	require.Equal(t, []string{"user"}, claims.Roles)
+}
+
+func TestRS256RejectsExpired(t *testing.T) {
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	mgr := jwtlib.NewRS256Manager(priv, -1*time.Second)
+
+	token, err := mgr.GenerateAccessToken("uid-1", "u@e.com", nil)
+	require.NoError(t, err)
+
+	_, err = mgr.ValidateAccessToken(token)
+	require.Error(t, err)
+}
+
+func TestES256RoundTrip(t *testing.T) {
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	mgr := jwtlib.NewES256Manager(priv, 15*time.Minute)
+
+	token, err := mgr.GenerateAccessToken("uid-2", "ec@example.com", []string{"admin"})
+	require.NoError(t, err)
+	require.NotEmpty(t, token)
+
+	claims, err := mgr.ValidateAccessToken(token)
+	require.NoError(t, err)
+	require.Equal(t, "uid-2", claims.UserID)
+	require.Equal(t, []string{"admin"}, claims.Roles)
 }

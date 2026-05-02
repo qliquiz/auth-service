@@ -39,7 +39,7 @@ type fixture struct {
 	svc     *auth.AuthService
 	uRepo   *mockUserRepo
 	sRepo   *mockSessionRepo
-	jwtMgr  *jwtlib.Manager
+	jwtMgr  *jwtlib.HS256Manager
 	miniRed *miniredis.Miniredis
 }
 
