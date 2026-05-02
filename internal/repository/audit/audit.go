@@ -1,50 +1,45 @@
-// Package audit provides the repository for writing security audit events
-// to the audit_events table.
+// Package audit provides the PostgreSQL implementation of ports.AuditStore.
 package audit
 
 import (
+	"auth-service/pkg/ports"
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// EventType is a structured audit event kind.
-type EventType string
+// Aliases so callers that already import this package keep compiling.
+// New code should use ports.AuditEventType and ports.AuditEvent directly.
+type EventType = ports.AuditEventType
+type Event = ports.AuditEvent
 
 const (
-	EventRegister      EventType = "user.register"
-	EventLoginSuccess  EventType = "user.login.success"
-	EventLoginFailure  EventType = "user.login.failure"
-	EventLoginBlocked  EventType = "user.login.blocked"
-	EventLogout        EventType = "user.logout"
-	EventLogoutAll     EventType = "user.logout_all"
-	EventTokenRefresh  EventType = "token.refresh"
-	EventSessionRevoke EventType = "session.revoke"
+	EventRegister      = ports.AuditEventRegister
+	EventLoginSuccess  = ports.AuditEventLoginSuccess
+	EventLoginFailure  = ports.AuditEventLoginFailure
+	EventLoginBlocked  = ports.AuditEventLoginBlocked
+	EventLogout        = ports.AuditEventLogout
+	EventLogoutAll     = ports.AuditEventLogoutAll
+	EventTokenRefresh  = ports.AuditEventTokenRefresh
+	EventSessionRevoke = ports.AuditEventSessionRevoke
 )
 
-// Event is a single auditable action.
-type Event struct {
-	UserID    *string // nil for events where the user is unknown (e.g. failed login for non-existent email)
-	EventType EventType
-	IPAddress string
-	UserAgent string
-	Metadata  map[string]string // optional key-value context (email, device_id, session_id, …)
-}
-
-// StoredEvent is an event as returned from the database.
+// StoredEvent is an event row as returned from the database.
+// Kept here (not in ports) because external code has no reason to
+// construct or parse DB rows.
 type StoredEvent struct {
 	ID        string
 	UserID    *string
-	EventType EventType
+	EventType ports.AuditEventType
 	IPAddress string
 	UserAgent string
 	Metadata  map[string]string
-	CreatedAt time.Time
+	CreatedAt string // RFC3339
 }
 
+// Repository is the PostgreSQL implementation of ports.AuditStore.
 type Repository struct {
 	db *pgxpool.Pool
 }
@@ -53,9 +48,9 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-// Log inserts a single audit event. Callers typically invoke this in a goroutine
-// so that a slow DB write does not block the request path.
-func (r *Repository) Log(ctx context.Context, e *Event) error {
+// Log inserts a single audit event. Callers typically invoke this in a
+// goroutine so that a slow DB write does not block the request path.
+func (r *Repository) Log(ctx context.Context, e *ports.AuditEvent) error {
 	var meta []byte
 	if len(e.Metadata) > 0 {
 		var err error
