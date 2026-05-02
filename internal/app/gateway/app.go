@@ -134,5 +134,8 @@ func (a *App) Stop(ctx context.Context) error {
 	if a.cancelGW != nil {
 		a.cancelGW()
 	}
+	if a.server == nil {
+		return nil
+	}
 	return a.server.Shutdown(ctx)
 }
