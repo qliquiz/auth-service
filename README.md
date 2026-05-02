@@ -180,7 +180,8 @@ gRPC :8082
 - **Access token** — JWT HS256, TTL 15 мин, stateless.
 - **Refresh token** — случайная 32-байтовая строка, хранится как SHA-256 хэш в `sessions` и в Redis (`refresh:{hash}` →
   JSON). TTL совпадает с `expires_at` сессии.
-- **Ротация** — при RefreshToken старый токен атомарно удаляется и новый создаётся в одной DB-транзакции, предотвращая replay при параллельных запросах.
+- **Ротация** — при RefreshToken старый токен атомарно удаляется и новый создаётся в одной DB-транзакции, предотвращая
+  replay при параллельных запросах.
 - **Logout / RevokeSession / LogoutAll** — явно удаляют Redis-ключи (нет окна stale-cache).
 
 **Пароли:** argon2id (`m=65536, t=3, p=4`) в формате PHC string.

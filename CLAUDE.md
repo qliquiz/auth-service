@@ -146,10 +146,13 @@ CREATE TABLE users
 
 ## Token Strategy
 
-- **Access token** — JWT (HS256), 15 min TTL. Stateless; validated by signature alone. Parser enforces `exp` claim presence and `iss=auth-service` to reject tokens without expiry or from foreign services.
+- **Access token** — JWT (HS256), 15 min TTL. Stateless; validated by signature alone. Parser enforces `exp` claim
+  presence and `iss=auth-service` to reject tokens without expiry or from foreign services.
 - **Refresh token** — random 32-byte URL-safe string. Stored as SHA-256 hex hash in `sessions` table and cached in
   Redis (`refresh:{hash}` → JSON). Redis is a write-through cache; DB is the source of truth.
-- **Rotation** — `RefreshToken` atomically deletes the old session and inserts the new one in a single DB transaction (`RotateToken`). `RowsAffected() == 0` on the delete detects concurrent replay and returns `Unauthenticated` immediately.
+- **Rotation** — `RefreshToken` atomically deletes the old session and inserts the new one in a single DB transaction (
+  `RotateToken`). `RowsAffected() == 0` on the delete detects concurrent replay and returns `Unauthenticated`
+  immediately.
 
 ## Session Redis Cache
 
