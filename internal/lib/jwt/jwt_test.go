@@ -152,6 +152,7 @@ func TestManager_TokenNotExpiredYet(t *testing.T) {
 }
 
 func TestRS256RoundTrip(t *testing.T) {
+	t.Parallel()
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 	mgr := jwtlib.NewRS256Manager(priv, 15*time.Minute)
@@ -168,6 +169,7 @@ func TestRS256RoundTrip(t *testing.T) {
 }
 
 func TestRS256RejectsExpired(t *testing.T) {
+	t.Parallel()
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 	mgr := jwtlib.NewRS256Manager(priv, -1*time.Second)
@@ -180,6 +182,7 @@ func TestRS256RejectsExpired(t *testing.T) {
 }
 
 func TestES256RoundTrip(t *testing.T) {
+	t.Parallel()
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 	mgr := jwtlib.NewES256Manager(priv, 15*time.Minute)
@@ -192,4 +195,17 @@ func TestES256RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "uid-2", claims.UserID)
 	require.Equal(t, []string{"admin"}, claims.Roles)
+}
+
+func TestES256RejectsExpired(t *testing.T) {
+	t.Parallel()
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	mgr := jwtlib.NewES256Manager(priv, -1*time.Second)
+
+	token, err := mgr.GenerateAccessToken("uid-2", "ec@example.com", nil)
+	require.NoError(t, err)
+
+	_, err = mgr.ValidateAccessToken(token)
+	require.Error(t, err)
 }

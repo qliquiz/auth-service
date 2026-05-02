@@ -39,6 +39,7 @@ func New(
 ) *App {
 	uRepo := userRepo.New(db.Pool)
 	sRepo := sessionRepo.New(db.Pool)
+	// TODO(Task 6): select JWT strategy from jwtCfg.Algorithm (hs256/rs256/es256).
 	jwtManager := jwtlib.New(jwtCfg.Secret, jwtCfg.AccessTTL)
 
 	aRepo := auditRepo.New(db.Pool)

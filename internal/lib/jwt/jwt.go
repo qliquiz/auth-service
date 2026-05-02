@@ -8,8 +8,9 @@ import (
 	"fmt"
 	"time"
 
-	"auth-service/pkg/ports"
 	"github.com/golang-jwt/jwt/v5"
+
+	"auth-service/pkg/ports"
 )
 
 // jwtClaims is the internal representation used for signing/parsing.
@@ -48,13 +49,6 @@ func NewHS256Manager(secret string, accessTTL time.Duration) *HS256Manager {
 func New(secret string, accessTTL time.Duration) *HS256Manager {
 	return NewHS256Manager(secret, accessTTL)
 }
-
-// Compile-time assertions: all three managers must implement AccessTokenManager.
-var (
-	_ ports.AccessTokenManager = (*HS256Manager)(nil)
-	_ ports.AccessTokenManager = (*RS256Manager)(nil)
-	_ ports.AccessTokenManager = (*ES256Manager)(nil)
-)
 
 func (m *HS256Manager) GenerateAccessToken(userID, email string, roles []string) (string, error) {
 	return signToken(jwt.SigningMethodHS256, m.secret, userID, email, roles, m.accessTTL)
@@ -160,3 +154,10 @@ func parseToken(tokenStr string, keyFunc jwt.Keyfunc) (*ports.Claims, error) {
 	}
 	return claims.toPorts(), nil
 }
+
+// Compile-time assertions: all three managers must implement AccessTokenManager.
+var (
+	_ ports.AccessTokenManager = (*HS256Manager)(nil)
+	_ ports.AccessTokenManager = (*RS256Manager)(nil)
+	_ ports.AccessTokenManager = (*ES256Manager)(nil)
+)
