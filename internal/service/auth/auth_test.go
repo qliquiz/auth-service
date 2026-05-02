@@ -8,15 +8,16 @@ import (
 	"time"
 
 	"auth-service/gen/api"
+	rediscache "auth-service/internal/cache/redis"
 	"auth-service/internal/domain/models"
 	"auth-service/internal/lib/bruteforce"
 	jwtlib "auth-service/internal/lib/jwt"
 	"auth-service/internal/lib/password"
 	"auth-service/internal/lib/token"
-	auditRepo "auth-service/internal/repository/audit"
 	sessionRepo "auth-service/internal/repository/session"
 	userRepo "auth-service/internal/repository/user"
 	"auth-service/internal/service/auth"
+	"auth-service/pkg/ports"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
@@ -56,8 +57,9 @@ func newFixture(t *testing.T) *fixture {
 	uRepo := &mockUserRepo{}
 	sRepo := &mockSessionRepo{}
 	jwtMgr := jwtlib.New(testJWTSecret, 15*time.Minute)
+	cache := rediscache.New(redisClient)
 
-	svc := auth.New(uRepo, sRepo, jwtMgr, redisClient, nil, nil, slog.Default(), testRefreshTTL)
+	svc := auth.New(uRepo, sRepo, jwtMgr, cache, nil, nil, nil, slog.Default(), testRefreshTTL)
 
 	return &fixture{
 		svc:     svc,
@@ -628,8 +630,9 @@ func newFixtureWithGuard(t *testing.T, maxAttempts int) *fixture {
 	sRepo := &mockSessionRepo{}
 	jwtMgr := jwtlib.New(testJWTSecret, 15*time.Minute)
 	guard := bruteforce.New(redisClient, maxAttempts, time.Minute, 15*time.Minute)
+	cache := rediscache.New(redisClient)
 
-	svc := auth.New(uRepo, sRepo, jwtMgr, redisClient, nil, guard, slog.Default(), testRefreshTTL)
+	svc := auth.New(uRepo, sRepo, jwtMgr, cache, nil, guard, nil, slog.Default(), testRefreshTTL)
 
 	return &fixture{
 		svc:     svc,
@@ -754,8 +757,9 @@ func newFixtureWithAudit(t *testing.T) (*fixture, *auditSink) {
 	sRepo := &mockSessionRepo{}
 	jwtMgr := jwtlib.New(testJWTSecret, 15*time.Minute)
 	sink := newAuditSink()
+	cache := rediscache.New(redisClient)
 
-	svc := auth.New(uRepo, sRepo, jwtMgr, redisClient, sink, nil, slog.Default(), testRefreshTTL)
+	svc := auth.New(uRepo, sRepo, jwtMgr, cache, sink, nil, nil, slog.Default(), testRefreshTTL)
 
 	return &fixture{
 		svc:     svc,
@@ -781,7 +785,7 @@ func TestLogin_Success_AuditEventLogged(t *testing.T) {
 	require.NoError(t, err)
 
 	e := sink.next(t)
-	assert.Equal(t, auditRepo.EventLoginSuccess, e.EventType)
+	assert.Equal(t, ports.AuditEventLoginSuccess, e.EventType)
 	require.NotNil(t, e.UserID)
 	assert.Equal(t, user.ID, *e.UserID)
 }
@@ -800,7 +804,7 @@ func TestLogin_Failure_AuditEventLogged(t *testing.T) {
 	require.Error(t, err)
 
 	e := sink.next(t)
-	assert.Equal(t, auditRepo.EventLoginFailure, e.EventType)
+	assert.Equal(t, ports.AuditEventLoginFailure, e.EventType)
 }
 
 func TestRegister_AuditEventLogged(t *testing.T) {
@@ -817,7 +821,7 @@ func TestRegister_AuditEventLogged(t *testing.T) {
 	require.NoError(t, err)
 
 	e := sink.next(t)
-	assert.Equal(t, auditRepo.EventRegister, e.EventType)
+	assert.Equal(t, ports.AuditEventRegister, e.EventType)
 	require.NotNil(t, e.UserID)
 	assert.Equal(t, "user-001", *e.UserID)
 }
@@ -848,7 +852,7 @@ func TestLogout_AuditEventLogged(t *testing.T) {
 	require.NoError(t, err)
 
 	e := sink.next(t)
-	assert.Equal(t, auditRepo.EventLogout, e.EventType)
+	assert.Equal(t, ports.AuditEventLogout, e.EventType)
 	require.NotNil(t, e.UserID, "userID resolved from Redis cache before session deletion")
 	assert.Equal(t, user.ID, *e.UserID)
 }
@@ -982,8 +986,9 @@ func TestLogin_ExpiredRefreshTTL_NotCached(t *testing.T) {
 	uRepo := &mockUserRepo{}
 	sRepo := &mockSessionRepo{}
 	jwtMgr := jwtlib.New(testJWTSecret, 15*time.Minute)
+	cache := rediscache.New(rc)
 	// Negative TTL → sessions expire instantly → cacheSession must skip Set.
-	svc := auth.New(uRepo, sRepo, jwtMgr, rc, nil, nil, slog.Default(), -time.Hour)
+	svc := auth.New(uRepo, sRepo, jwtMgr, cache, nil, nil, nil, slog.Default(), -time.Hour)
 
 	user := fakeUser(t)
 	uRepo.On("GetByEmail", mock.Anything, user.Email).Return(user, nil)

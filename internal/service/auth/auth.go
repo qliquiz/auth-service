@@ -4,15 +4,13 @@ import (
 	"auth-service/gen/api"
 	"auth-service/internal/domain/models"
 	"auth-service/internal/lib/bruteforce"
-	jwtlib "auth-service/internal/lib/jwt"
 	"auth-service/internal/lib/password"
 	"auth-service/internal/lib/token"
 	"auth-service/internal/lib/validate"
-	auditRepo "auth-service/internal/repository/audit"
 	sessionRepo "auth-service/internal/repository/session"
 	userRepo "auth-service/internal/repository/user"
+	"auth-service/pkg/ports"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -20,7 +18,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -28,72 +25,42 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const redisSessionPrefix = "refresh:"
-
-// userRepository is the interface the service requires from the user data store.
-type userRepository interface {
-	Create(ctx context.Context, email, passwordHash string) (*models.User, error)
-	GetByEmail(ctx context.Context, email string) (*models.User, error)
-	GetByID(ctx context.Context, id string) (*models.User, error)
-}
-
-// sessionRepository is the interface the service requires from the session data store.
-type sessionRepository interface {
-	Create(ctx context.Context, s *models.Session) error
-	GetByTokenHash(ctx context.Context, tokenHash string) (*models.Session, error)
-	DeleteByID(ctx context.Context, sessionID, userID string) (string, error)
-	DeleteByTokenHash(ctx context.Context, tokenHash string) error
-	RotateToken(ctx context.Context, oldHash string, newSession *models.Session) error
-	DeleteAllByUserID(ctx context.Context, userID string) ([]string, error)
-	ListByUserID(ctx context.Context, userID string) ([]*models.Session, error)
-}
-
-// TODO(Task 6): migrate to ports.AuditStore once the full service refactor lands.
-// auditRepository is the interface the service uses to write security audit events.
-type auditRepository interface {
-	Log(ctx context.Context, e *auditRepo.Event) error
-}
-
-// redisSession is the value stored in Redis for a refresh token.
-type redisSession struct {
-	SessionID string    `json:"sid"`
-	UserID    string    `json:"uid"`
-	UserEmail string    `json:"email"`
-	DeviceID  string    `json:"did"`
-	ExpiresAt time.Time `json:"exp"`
-}
-
+// AuthService implements api.AuthServiceServer. All dependencies are injected
+// via pkg/ports interfaces so the underlying backends are swappable.
 type AuthService struct {
 	api.UnimplementedAuthServiceServer
-	userRepo    userRepository
-	sessionRepo sessionRepository
-	auditRepo   auditRepository   // nil = audit disabled
-	bruteGuard  *bruteforce.Guard // nil = brute-force protection disabled
-	jwtManager  *jwtlib.HS256Manager
-	redis       *redis.Client
-	log         *slog.Logger
-	refreshTTL  time.Duration
+	userStore    ports.UserStore
+	sessionStore ports.SessionStore
+	auditStore   ports.AuditStore   // nil = audit disabled
+	tokenMgr     ports.AccessTokenManager
+	cache        ports.SessionCache
+	hook         ports.EventHook    // nil = no custom hook
+	bruteGuard   *bruteforce.Guard  // nil = brute-force protection disabled
+	log          *slog.Logger
+	refreshTTL   time.Duration
 }
 
 func New(
-	userRepository userRepository,
-	sessionRepository sessionRepository,
-	jwtManager *jwtlib.HS256Manager,
-	redisClient *redis.Client,
-	auditRepository auditRepository,
+	userStore ports.UserStore,
+	sessionStore ports.SessionStore,
+	tokenMgr ports.AccessTokenManager,
+	cache ports.SessionCache,
+	auditStore ports.AuditStore,
 	bruteGuard *bruteforce.Guard,
+	hook ports.EventHook,
 	log *slog.Logger,
 	refreshTTL time.Duration,
 ) *AuthService {
 	return &AuthService{
-		userRepo:    userRepository,
-		sessionRepo: sessionRepository,
-		auditRepo:   auditRepository,
-		bruteGuard:  bruteGuard,
-		jwtManager:  jwtManager,
-		redis:       redisClient,
-		log:         log,
-		refreshTTL:  refreshTTL,
+		userStore:    userStore,
+		sessionStore: sessionStore,
+		auditStore:   auditStore,
+		tokenMgr:     tokenMgr,
+		cache:        cache,
+		hook:         hook,
+		bruteGuard:   bruteGuard,
+		log:          log,
+		refreshTTL:   refreshTTL,
 	}
 }
 
@@ -122,7 +89,7 @@ func (s *AuthService) Register(ctx context.Context, req *api.RegisterRequest) (*
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 
-	user, err := s.userRepo.Create(ctx, req.Email, hash)
+	user, err := s.userStore.Create(ctx, req.Email, hash)
 	if err != nil {
 		if errors.Is(err, userRepo.ErrAlreadyExists) {
 			return nil, status.Error(codes.AlreadyExists, "email already registered")
@@ -132,7 +99,9 @@ func (s *AuthService) Register(ctx context.Context, req *api.RegisterRequest) (*
 	}
 
 	ipAddr, userAgent := extractClientInfo(ctx)
-	s.logAudit(strPtr(user.ID), auditRepo.EventRegister, ipAddr, userAgent,
+	s.logAudit(strPtr(user.ID), ports.AuditEventRegister, ipAddr, userAgent,
+		map[string]string{"email": user.Email})
+	s.fireHook(ctx, user.ID, user.Email, ports.AuditEventRegister, ipAddr, userAgent,
 		map[string]string{"email": user.Email})
 
 	log.Info("user registered", slog.String("user_id", user.ID))
@@ -159,17 +128,21 @@ func (s *AuthService) Login(ctx context.Context, req *api.LoginRequest) (*api.Lo
 		if err != nil {
 			log.Error("check brute force", slog.String("err", err.Error()))
 		} else if locked {
-			s.logAudit(nil, auditRepo.EventLoginBlocked, ipAddr, userAgent,
+			s.logAudit(nil, ports.AuditEventLoginBlocked, ipAddr, userAgent,
+				map[string]string{"email": req.Email})
+			s.fireHook(ctx, "", req.Email, ports.AuditEventLoginBlocked, ipAddr, userAgent,
 				map[string]string{"email": req.Email})
 			return nil, status.Error(codes.ResourceExhausted,
 				"account temporarily locked due to too many failed attempts, try again later")
 		}
 	}
 
-	user, err := s.userRepo.GetByEmail(ctx, req.Email)
+	user, err := s.userStore.GetByEmail(ctx, req.Email)
 	if err != nil {
 		if errors.Is(err, userRepo.ErrNotFound) {
-			s.logAudit(nil, auditRepo.EventLoginFailure, ipAddr, userAgent,
+			s.logAudit(nil, ports.AuditEventLoginFailure, ipAddr, userAgent,
+				map[string]string{"email": req.Email})
+			s.fireHook(ctx, "", req.Email, ports.AuditEventLoginFailure, ipAddr, userAgent,
 				map[string]string{"email": req.Email})
 			return nil, status.Error(codes.Unauthenticated, "invalid credentials")
 		}
@@ -187,13 +160,17 @@ func (s *AuthService) Login(ctx context.Context, req *api.LoginRequest) (*api.Lo
 			if wasLocked, bErr := s.bruteGuard.RecordFailure(ctx, req.Email); bErr != nil {
 				log.Error("record brute force failure", slog.String("err", bErr.Error()))
 			} else if wasLocked {
-				s.logAudit(strPtr(user.ID), auditRepo.EventLoginBlocked, ipAddr, userAgent,
+				s.logAudit(strPtr(user.ID), ports.AuditEventLoginBlocked, ipAddr, userAgent,
+					map[string]string{"email": req.Email})
+				s.fireHook(ctx, user.ID, user.Email, ports.AuditEventLoginBlocked, ipAddr, userAgent,
 					map[string]string{"email": req.Email})
 				return nil, status.Error(codes.ResourceExhausted,
 					"account temporarily locked due to too many failed attempts, try again later")
 			}
 		}
-		s.logAudit(strPtr(user.ID), auditRepo.EventLoginFailure, ipAddr, userAgent,
+		s.logAudit(strPtr(user.ID), ports.AuditEventLoginFailure, ipAddr, userAgent,
+			map[string]string{"email": req.Email})
+		s.fireHook(ctx, user.ID, user.Email, ports.AuditEventLoginFailure, ipAddr, userAgent,
 			map[string]string{"email": req.Email})
 		return nil, status.Error(codes.Unauthenticated, "invalid credentials")
 	}
@@ -203,7 +180,7 @@ func (s *AuthService) Login(ctx context.Context, req *api.LoginRequest) (*api.Lo
 		s.bruteGuard.Reset(ctx, req.Email)
 	}
 
-	accessToken, err := s.jwtManager.GenerateAccessToken(user.ID, user.Email, []string{"user"})
+	accessToken, err := s.tokenMgr.GenerateAccessToken(user.ID, user.Email, []string{"user"})
 	if err != nil {
 		log.Error("generate access token", slog.String("err", err.Error()))
 		return nil, status.Error(codes.Internal, "internal error")
@@ -229,12 +206,12 @@ func (s *AuthService) Login(ctx context.Context, req *api.LoginRequest) (*api.Lo
 		ExpiresAt: time.Now().Add(s.refreshTTL),
 	}
 
-	if err = s.sessionRepo.Create(ctx, sess); err != nil {
+	if err = s.sessionStore.Create(ctx, sess); err != nil {
 		log.Error("create session", slog.String("err", err.Error()))
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 
-	s.cacheSession(ctx, hashedRefresh, &redisSession{
+	s.cacheSession(ctx, hashedRefresh, &ports.CachedSession{
 		SessionID: sess.ID,
 		UserID:    user.ID,
 		UserEmail: user.Email,
@@ -242,7 +219,9 @@ func (s *AuthService) Login(ctx context.Context, req *api.LoginRequest) (*api.Lo
 		ExpiresAt: sess.ExpiresAt,
 	})
 
-	s.logAudit(strPtr(user.ID), auditRepo.EventLoginSuccess, ipAddr, userAgent,
+	s.logAudit(strPtr(user.ID), ports.AuditEventLoginSuccess, ipAddr, userAgent,
+		map[string]string{"email": user.Email, "device_id": deviceID, "session_id": sess.ID})
+	s.fireHook(ctx, user.ID, user.Email, ports.AuditEventLoginSuccess, ipAddr, userAgent,
 		map[string]string{"email": user.Email, "device_id": deviceID, "session_id": sess.ID})
 
 	log.Info("user logged in", slog.String("user_id", user.ID), slog.String("session_id", sess.ID))
@@ -255,7 +234,7 @@ func (s *AuthService) Login(ctx context.Context, req *api.LoginRequest) (*api.Lo
 // ── ValidateToken ─────────────────────────────────────────────────────────────
 
 func (s *AuthService) ValidateToken(_ context.Context, req *api.ValidateTokenRequest) (*api.ValidateTokenResponse, error) {
-	claims, err := s.jwtManager.ValidateAccessToken(req.Token)
+	claims, err := s.tokenMgr.ValidateAccessToken(req.Token)
 	if err != nil {
 		return &api.ValidateTokenResponse{Valid: false}, nil
 	}
@@ -279,7 +258,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *api.RefreshTokenReq
 	cached, err := s.getCachedSession(ctx, tokenHash)
 	if err != nil {
 		// Cache miss — fall back to DB (also handles Redis unavailability).
-		dbSess, dbErr := s.sessionRepo.GetByTokenHash(ctx, tokenHash)
+		dbSess, dbErr := s.sessionStore.GetByTokenHash(ctx, tokenHash)
 		if dbErr != nil {
 			if errors.Is(dbErr, sessionRepo.ErrNotFound) {
 				return nil, status.Error(codes.Unauthenticated, "invalid refresh token")
@@ -287,7 +266,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *api.RefreshTokenReq
 			log.Error("get session from db", slog.String("err", dbErr.Error()))
 			return nil, status.Error(codes.Internal, "internal error")
 		}
-		cached = &redisSession{
+		cached = &ports.CachedSession{
 			SessionID: dbSess.ID,
 			UserID:    dbSess.UserID,
 			UserEmail: dbSess.UserEmail,
@@ -297,7 +276,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *api.RefreshTokenReq
 	}
 
 	if time.Now().After(cached.ExpiresAt) {
-		if delErr := s.sessionRepo.DeleteByTokenHash(ctx, tokenHash); delErr != nil && !errors.Is(delErr, sessionRepo.ErrNotFound) {
+		if delErr := s.sessionStore.DeleteByTokenHash(ctx, tokenHash); delErr != nil && !errors.Is(delErr, sessionRepo.ErrNotFound) {
 			log.Error("delete expired session", slog.String("err", delErr.Error()))
 		}
 		s.deleteSessionFromCache(ctx, tokenHash)
@@ -305,7 +284,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *api.RefreshTokenReq
 	}
 
 	// Rotate tokens.
-	newAccessToken, err := s.jwtManager.GenerateAccessToken(cached.UserID, cached.UserEmail, []string{"user"})
+	newAccessToken, err := s.tokenMgr.GenerateAccessToken(cached.UserID, cached.UserEmail, []string{"user"})
 	if err != nil {
 		log.Error("generate access token", slog.String("err", err.Error()))
 		return nil, status.Error(codes.Internal, "internal error")
@@ -335,7 +314,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *api.RefreshTokenReq
 	// Atomically invalidate the old session and create the new one.
 	// RotateToken uses a DB transaction and verifies the old token was actually
 	// deleted (RowsAffected == 1), preventing concurrent refresh-token replay.
-	if err = s.sessionRepo.RotateToken(ctx, tokenHash, newSess); err != nil {
+	if err = s.sessionStore.RotateToken(ctx, tokenHash, newSess); err != nil {
 		if errors.Is(err, sessionRepo.ErrNotFound) {
 			// Another concurrent request already consumed this token.
 			return nil, status.Error(codes.Unauthenticated, "invalid refresh token")
@@ -344,7 +323,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *api.RefreshTokenReq
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 	s.deleteSessionFromCache(ctx, tokenHash)
-	s.cacheSession(ctx, newHash, &redisSession{
+	s.cacheSession(ctx, newHash, &ports.CachedSession{
 		SessionID: newSess.ID,
 		UserID:    cached.UserID,
 		UserEmail: cached.UserEmail,
@@ -352,7 +331,9 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *api.RefreshTokenReq
 		ExpiresAt: newSess.ExpiresAt,
 	})
 
-	s.logAudit(strPtr(cached.UserID), auditRepo.EventTokenRefresh, ipAddr, userAgent,
+	s.logAudit(strPtr(cached.UserID), ports.AuditEventTokenRefresh, ipAddr, userAgent,
+		map[string]string{"session_id": newSess.ID})
+	s.fireHook(ctx, cached.UserID, cached.UserEmail, ports.AuditEventTokenRefresh, ipAddr, userAgent,
 		map[string]string{"session_id": newSess.ID})
 
 	return &api.RefreshTokenResponse{
@@ -372,11 +353,13 @@ func (s *AuthService) Logout(ctx context.Context, req *api.LogoutRequest) (*api.
 	// cheapest source; on a miss we leave userID nil rather than doing an extra
 	// DB round-trip on the hot path.
 	var userID *string
+	var userEmail string
 	if cached, err := s.getCachedSession(ctx, tokenHash); err == nil {
 		userID = strPtr(cached.UserID)
+		userEmail = cached.UserEmail
 	}
 
-	if err := s.sessionRepo.DeleteByTokenHash(ctx, tokenHash); err != nil {
+	if err := s.sessionStore.DeleteByTokenHash(ctx, tokenHash); err != nil {
 		if errors.Is(err, sessionRepo.ErrNotFound) {
 			// Token already expired or revoked — idempotent success.
 			return &api.LogoutResponse{}, nil
@@ -387,7 +370,12 @@ func (s *AuthService) Logout(ctx context.Context, req *api.LogoutRequest) (*api.
 	s.deleteSessionFromCache(ctx, tokenHash)
 
 	ipAddr, userAgent := extractClientInfo(ctx)
-	s.logAudit(userID, auditRepo.EventLogout, ipAddr, userAgent, nil)
+	s.logAudit(userID, ports.AuditEventLogout, ipAddr, userAgent, nil)
+	uid := ""
+	if userID != nil {
+		uid = *userID
+	}
+	s.fireHook(ctx, uid, userEmail, ports.AuditEventLogout, ipAddr, userAgent, nil)
 
 	return &api.LogoutResponse{}, nil
 }
@@ -403,7 +391,7 @@ func (s *AuthService) LogoutAll(ctx context.Context, _ *api.LogoutAllRequest) (*
 		return nil, err
 	}
 
-	hashes, err := s.sessionRepo.DeleteAllByUserID(ctx, userID)
+	hashes, err := s.sessionStore.DeleteAllByUserID(ctx, userID)
 	if err != nil {
 		log.Error("delete all sessions", slog.String("err", err.Error()))
 		return nil, status.Error(codes.Internal, "internal error")
@@ -414,7 +402,9 @@ func (s *AuthService) LogoutAll(ctx context.Context, _ *api.LogoutAllRequest) (*
 	}
 
 	ipAddr, userAgent := extractClientInfo(ctx)
-	s.logAudit(strPtr(userID), auditRepo.EventLogoutAll, ipAddr, userAgent,
+	s.logAudit(strPtr(userID), ports.AuditEventLogoutAll, ipAddr, userAgent,
+		map[string]string{"sessions_revoked": fmt.Sprintf("%d", len(hashes))})
+	s.fireHook(ctx, userID, "", ports.AuditEventLogoutAll, ipAddr, userAgent,
 		map[string]string{"sessions_revoked": fmt.Sprintf("%d", len(hashes))})
 
 	log.Info("all sessions revoked", slog.String("user_id", userID), slog.Int("count", len(hashes)))
@@ -432,7 +422,7 @@ func (s *AuthService) ListSessions(ctx context.Context, _ *api.ListSessionsReque
 		return nil, err
 	}
 
-	sessions, err := s.sessionRepo.ListByUserID(ctx, userID)
+	sessions, err := s.sessionStore.ListByUserID(ctx, userID)
 	if err != nil {
 		log.Error("list sessions", slog.String("err", err.Error()))
 		return nil, status.Error(codes.Internal, "internal error")
@@ -464,7 +454,7 @@ func (s *AuthService) RevokeSession(ctx context.Context, req *api.RevokeSessionR
 		return nil, err
 	}
 
-	tokenHash, err := s.sessionRepo.DeleteByID(ctx, req.SessionId, userID)
+	tokenHash, err := s.sessionStore.DeleteByID(ctx, req.SessionId, userID)
 	if err != nil {
 		if errors.Is(err, sessionRepo.ErrNotFound) {
 			return nil, status.Error(codes.NotFound, "session not found")
@@ -475,7 +465,9 @@ func (s *AuthService) RevokeSession(ctx context.Context, req *api.RevokeSessionR
 	s.deleteSessionFromCache(ctx, tokenHash)
 
 	ipAddr, userAgent := extractClientInfo(ctx)
-	s.logAudit(strPtr(userID), auditRepo.EventSessionRevoke, ipAddr, userAgent,
+	s.logAudit(strPtr(userID), ports.AuditEventSessionRevoke, ipAddr, userAgent,
+		map[string]string{"session_id": req.SessionId})
+	s.fireHook(ctx, userID, "", ports.AuditEventSessionRevoke, ipAddr, userAgent,
 		map[string]string{"session_id": req.SessionId})
 
 	return &api.RevokeSessionResponse{}, nil
@@ -499,7 +491,7 @@ func (s *AuthService) extractUserIDFromCtx(ctx context.Context) (string, error) 
 	if !ok {
 		return "", status.Error(codes.Unauthenticated, "invalid authorization header format")
 	}
-	claims, err := s.jwtManager.ValidateAccessToken(tokenStr)
+	claims, err := s.tokenMgr.ValidateAccessToken(tokenStr)
 	if err != nil {
 		return "", status.Error(codes.Unauthenticated, "invalid access token")
 	}
@@ -543,51 +535,38 @@ func extractClientInfo(ctx context.Context) (ipAddress, userAgent string) {
 	return ipAddress, userAgent
 }
 
-// cacheSession stores a session in Redis with TTL until expiry.
-func (s *AuthService) cacheSession(ctx context.Context, tokenHash string, sess *redisSession) {
-	data, err := json.Marshal(sess)
-	if err != nil {
-		s.log.Error("marshal redis session", slog.String("err", err.Error()))
-		return
-	}
+// cacheSession stores a session via the SessionCache with TTL until expiry.
+func (s *AuthService) cacheSession(ctx context.Context, tokenHash string, sess *ports.CachedSession) {
 	ttl := time.Until(sess.ExpiresAt)
 	if ttl <= 0 {
 		return
 	}
-	key := redisSessionPrefix + tokenHash
-	if err = s.redis.Set(ctx, key, data, ttl).Err(); err != nil {
-		s.log.Error("set redis session", slog.String("err", err.Error()))
+	if err := s.cache.Set(ctx, tokenHash, sess, ttl); err != nil {
+		s.log.Error("set session cache", slog.String("err", err.Error()))
 	}
 }
 
-// getCachedSession retrieves a session from Redis.
-func (s *AuthService) getCachedSession(ctx context.Context, tokenHash string) (*redisSession, error) {
-	key := redisSessionPrefix + tokenHash
-	data, err := s.redis.Get(ctx, key).Bytes()
-	if err != nil {
-		return nil, fmt.Errorf("redis get: %w", err)
-	}
-	var sess redisSession
-	if err = json.Unmarshal(data, &sess); err != nil {
-		return nil, fmt.Errorf("unmarshal: %w", err)
-	}
-	return &sess, nil
+// getCachedSession retrieves a session from the cache.
+func (s *AuthService) getCachedSession(ctx context.Context, tokenHash string) (*ports.CachedSession, error) {
+	return s.cache.Get(ctx, tokenHash)
 }
 
-// deleteSessionFromCache removes a session from Redis.
+// deleteSessionFromCache removes a session from the cache.
 func (s *AuthService) deleteSessionFromCache(ctx context.Context, tokenHash string) {
-	s.redis.Del(ctx, redisSessionPrefix+tokenHash)
+	if err := s.cache.Delete(ctx, tokenHash); err != nil {
+		s.log.Error("delete session cache", slog.String("err", err.Error()))
+	}
 }
 
 // logAudit writes a security event asynchronously so it doesn't block the request path.
-func (s *AuthService) logAudit(userID *string, eventType auditRepo.EventType, ip, ua string, meta map[string]string) {
-	if s.auditRepo == nil {
+func (s *AuthService) logAudit(userID *string, eventType ports.AuditEventType, ip, ua string, meta map[string]string) {
+	if s.auditStore == nil {
 		return
 	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if err := s.auditRepo.Log(ctx, &auditRepo.Event{
+		if err := s.auditStore.Log(ctx, &ports.AuditEvent{
 			UserID:    userID,
 			EventType: eventType,
 			IPAddress: ip,
@@ -595,6 +574,27 @@ func (s *AuthService) logAudit(userID *string, eventType auditRepo.EventType, ip
 			Metadata:  meta,
 		}); err != nil {
 			s.log.Error("audit log", slog.String("event", string(eventType)), slog.String("err", err.Error()))
+		}
+	}()
+}
+
+// fireHook dispatches an auth lifecycle event to the configured hook asynchronously.
+func (s *AuthService) fireHook(ctx context.Context, userID, email string, eventType ports.AuditEventType, ip, ua string, meta map[string]string) {
+	if s.hook == nil {
+		return
+	}
+	go func() {
+		ctx2, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := s.hook.OnEvent(ctx2, ports.HookEvent{
+			Type:      eventType,
+			UserID:    userID,
+			UserEmail: email,
+			IPAddress: ip,
+			UserAgent: ua,
+			Metadata:  meta,
+		}); err != nil {
+			s.log.Error("hook error", slog.String("event", string(eventType)), slog.String("err", err.Error()))
 		}
 	}()
 }
