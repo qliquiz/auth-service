@@ -535,7 +535,7 @@
           "Auth"
         ],
         "summary": "Validate an access token",
-        "description": "Performs a **stateless** JWT signature and expiry check. Does not touch the database or Redis.\n\nDesigned for **inter-service** use — a downstream service can call this endpoint to verify a token without knowing the JWT secret.\n\n> This endpoint always returns HTTP 200. Inspect the `valid` field to determine whether the token is acceptable.",
+        "description": "Performs a **stateless** JWT signature and expiry check. Does not touch the database or Redis.\n\nValidation enforces: correct HS256 signature, `exp` claim present and not expired, and `iss=auth-service`. Tokens from other issuers or without an expiry claim are rejected.\n\nDesigned for **inter-service** use — a downstream service can call this endpoint to verify a token without knowing the JWT secret.\n\n> This endpoint always returns HTTP 200. Inspect the `valid` field to determine whether the token is acceptable.",
         "operationId": "ValidateToken",
         "requestBody": {
           "required": true,
@@ -593,7 +593,7 @@
           "Auth"
         ],
         "summary": "Rotate tokens",
-        "description": "Exchanges a valid refresh token for a **new access token + new refresh token**.\n\n**Token rotation:** the submitted refresh token is immediately deleted from the database and Redis — it cannot be reused. Replace it with the new one returned in the response.\n\nIf the refresh token is expired, it is deleted automatically and `401` is returned.\n\n**Redis cache:** on a cache hit the DB is not queried. On cache miss the DB is the fallback source of truth.\n\n**Errors:**\n- `401 Unauthenticated` — token not found, already rotated, or expired",
+        "description": "Exchanges a valid refresh token for a **new access token + new refresh token**.\n\n**Token rotation:** the old session is deleted and the new one is inserted in a single atomic DB transaction. If a concurrent request already consumed the same token, `RowsAffected == 0` on the delete is detected immediately and `401` is returned — preventing refresh-token replay attacks.\n\nIf the refresh token is expired, it is deleted automatically and `401` is returned.\n\n**Redis cache:** on a cache hit the DB is not queried. On cache miss the DB is the fallback source of truth.\n\n**Errors:**\n- `401 Unauthenticated` — token not found, already rotated, expired, or consumed by a concurrent request",
         "operationId": "RefreshToken",
         "requestBody": {
           "required": true,

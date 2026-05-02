@@ -158,6 +158,84 @@ func TestIsLocked_ExpiresAfterTTL(t *testing.T) {
 	assert.False(t, isLocked, "lock must expire after TTL")
 }
 
+// ── Redis-down fallback ────────────────────────────────────────────────────────
+
+func newGuardWithDeadRedis(t *testing.T) *bruteforce.Guard {
+	t.Helper()
+	// Point at a port nothing is listening on so every Redis call errors.
+	client := redis.NewClient(&redis.Options{Addr: "localhost:1"})
+	t.Cleanup(func() { _ = client.Close() })
+	return bruteforce.New(client, testMax, testWindow, testTTL)
+}
+
+func TestIsLocked_RedisDown_FallsBackToLocal(t *testing.T) {
+	t.Parallel()
+	g := newGuardWithDeadRedis(t)
+	ctx := context.Background()
+	email := "fallback@example.com"
+
+	locked, err := g.IsLocked(ctx, email)
+	require.NoError(t, err, "Redis down must not surface an error")
+	assert.False(t, locked, "fresh account must not appear locked")
+}
+
+func TestRecordFailure_RedisDown_LocalFallbackLocks(t *testing.T) {
+	t.Parallel()
+	g := newGuardWithDeadRedis(t)
+	ctx := context.Background()
+	email := "fallback-lock@example.com"
+
+	for i := 0; i < testMax-1; i++ {
+		locked, err := g.RecordFailure(ctx, email)
+		require.NoError(t, err)
+		assert.False(t, locked)
+	}
+
+	locked, err := g.RecordFailure(ctx, email)
+	require.NoError(t, err)
+	assert.True(t, locked, "local fallback must lock after maxAttempts failures")
+
+	// IsLocked must also reflect the local lock.
+	isLocked, err := g.IsLocked(ctx, email)
+	require.NoError(t, err)
+	assert.True(t, isLocked)
+}
+
+func TestReset_RedisDown_ClearsLocalLock(t *testing.T) {
+	t.Parallel()
+	g := newGuardWithDeadRedis(t)
+	ctx := context.Background()
+	email := "fallback-reset@example.com"
+
+	for i := 0; i < testMax; i++ {
+		_, _ = g.RecordFailure(ctx, email)
+	}
+	isLocked, _ := g.IsLocked(ctx, email)
+	require.True(t, isLocked)
+
+	g.Reset(ctx, email)
+
+	isLocked, err := g.IsLocked(ctx, email)
+	require.NoError(t, err)
+	assert.False(t, isLocked, "Reset must clear the local lock when Redis is down")
+}
+
+func TestAttemptsRemaining_RedisDown_FallsBackToLocal(t *testing.T) {
+	t.Parallel()
+	g := newGuardWithDeadRedis(t)
+	ctx := context.Background()
+	email := "remaining-fallback@example.com"
+
+	remaining, err := g.AttemptsRemaining(ctx, email)
+	require.NoError(t, err)
+	assert.Equal(t, testMax, remaining, "no failures yet — full attempts remaining")
+
+	_, _ = g.RecordFailure(ctx, email)
+	remaining, err = g.AttemptsRemaining(ctx, email)
+	require.NoError(t, err)
+	assert.Equal(t, testMax-1, remaining, "one failure recorded locally")
+}
+
 func TestMultipleEmails_Isolated(t *testing.T) {
 	t.Parallel()
 	g, _ := newGuard(t)

@@ -62,6 +62,10 @@ REDIS_HOST=localhost
 REDIS_PORT=6379
 REDIS_PASSWORD=
 
+# Gateway → gRPC connection
+GATEWAY_GRPC_TARGET=         # override gRPC backend host:port (default: localhost:<GRPC_PORT>)
+GATEWAY_GRPC_TLS_CERT=       # path to gRPC server TLS cert; leave empty for insecure loopback (dev)
+
 # Brute-force protection
 BRUTE_FORCE_MAX_ATTEMPTS=5   # failed logins before lockout
 BRUTE_FORCE_WINDOW=15m       # rolling window for counting failures
@@ -176,7 +180,8 @@ gRPC :8082
 - **Access token** — JWT HS256, TTL 15 мин, stateless.
 - **Refresh token** — случайная 32-байтовая строка, хранится как SHA-256 хэш в `sessions` и в Redis (`refresh:{hash}` →
   JSON). TTL совпадает с `expires_at` сессии.
-- **Ротация** — при RefreshToken старый токен удаляется из БД и Redis, выдаётся новая пара.
+- **Ротация** — при RefreshToken старый токен атомарно удаляется и новый создаётся в одной DB-транзакции, предотвращая
+  replay при параллельных запросах.
 - **Logout / RevokeSession / LogoutAll** — явно удаляют Redis-ключи (нет окна stale-cache).
 
 **Пароли:** argon2id (`m=65536, t=3, p=4`) в формате PHC string.

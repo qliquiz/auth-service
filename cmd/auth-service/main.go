@@ -7,6 +7,7 @@ import (
 	"auth-service/internal/postgres"
 	"auth-service/internal/redis"
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -59,17 +60,31 @@ func main() {
 		cfg.GRPC.Timeout,
 		cfg.JWT,
 		cfg.Security,
+		cfg.Gateway,
 		cfg.Env,
 	)
 
-	go application.GrpcApp.MustRun()
-	go application.GatewayApp.MustRun()
+	serverErr := make(chan error, 2)
+	go func() {
+		if err := application.GrpcApp.Run(); err != nil {
+			serverErr <- fmt.Errorf("grpc: %w", err)
+		}
+	}()
+	go func() {
+		if err := application.GatewayApp.Run(); err != nil {
+			serverErr <- fmt.Errorf("gateway: %w", err)
+		}
+	}()
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
 
-	sign := <-stop
-	log.Info("shutting down application...", slog.String("signal", sign.String()))
+	select {
+	case sign := <-stop:
+		log.Info("shutting down application...", slog.String("signal", sign.String()))
+	case err := <-serverErr:
+		log.Error("server startup failed", slog.String("err", err.Error()))
+	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -83,18 +98,21 @@ func main() {
 }
 
 func setupLogger(env string) *slog.Logger {
-	var log *slog.Logger
-
 	switch env {
 	case envLocal:
-		log = setupPrettySlog()
+		return setupPrettySlog()
 	case envDev:
-		log = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	case envProd:
-		log = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	default:
+		slog.New(slog.NewJSONHandler(os.Stderr, nil)).Error(
+			"unknown ENV value, must be one of: local, dev, prod",
+			slog.String("env", env),
+		)
+		os.Exit(1)
+		return nil // unreachable
 	}
-
-	return log
 }
 
 func setupPrettySlog() *slog.Logger {

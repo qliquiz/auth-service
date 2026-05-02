@@ -101,6 +101,8 @@ Loaded from `.env` via `cleanenv`. Key variables:
 | `GRPC_TIMEOUT`             | `5s`    | Deadline for completing new connection handshakes (TLS + HTTP/2) |
 | `POSTGRES_*`               | —       | Host, port, user, password, db                                   |
 | `REDIS_*`                  | —       | Host, port, optional password                                    |
+| `GATEWAY_GRPC_TARGET`      | `""`    | Override gRPC backend address (default: `localhost:<GRPC_PORT>`) |
+| `GATEWAY_GRPC_TLS_CERT`    | `""`    | Path to gRPC server TLS cert; empty = insecure loopback (dev)    |
 | `BRUTE_FORCE_MAX_ATTEMPTS` | `5`     | Failed logins before account lockout                             |
 | `BRUTE_FORCE_WINDOW`       | `15m`   | Rolling window for counting failures                             |
 | `BRUTE_FORCE_LOCKOUT_TTL`  | `15m`   | How long an account stays locked                                 |
@@ -125,7 +127,11 @@ works identically for HTTP and gRPC (via metadata).
 
 ## Database Schema
 
-Single migration (`migrations/0001_init.up.sql`):
+Initial schema in `migrations/0001_init.up.sql`. Subsequent migrations:
+
+- `0004` — `users.created_at` / `updated_at` promoted to `TIMESTAMPTZ` (timezone-aware)
+
+Current effective `users` schema:
 
 ```sql
 CREATE TABLE users
@@ -133,17 +139,20 @@ CREATE TABLE users
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email         TEXT UNIQUE NOT NULL,
     password_hash TEXT        NOT NULL,
-    created_at    TIMESTAMP        DEFAULT CURRENT_TIMESTAMP,
-    updated_at    TIMESTAMP        DEFAULT CURRENT_TIMESTAMP
+    created_at    TIMESTAMPTZ      DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMPTZ      DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
 ## Token Strategy
 
-- **Access token** — JWT (HS256), 15 min TTL. Stateless; validated by signature alone.
+- **Access token** — JWT (HS256), 15 min TTL. Stateless; validated by signature alone. Parser enforces `exp` claim
+  presence and `iss=auth-service` to reject tokens without expiry or from foreign services.
 - **Refresh token** — random 32-byte URL-safe string. Stored as SHA-256 hex hash in `sessions` table and cached in
   Redis (`refresh:{hash}` → JSON). Redis is a write-through cache; DB is the source of truth.
-- **Rotation** — every `RefreshToken` call invalidates the old token and issues a new pair.
+- **Rotation** — `RefreshToken` atomically deletes the old session and inserts the new one in a single DB transaction (
+  `RotateToken`). `RowsAffected() == 0` on the delete detects concurrent replay and returns `Unauthenticated`
+  immediately.
 
 ## Session Redis Cache
 

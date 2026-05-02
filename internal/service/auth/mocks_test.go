@@ -60,6 +60,11 @@ func (m *mockSessionRepo) DeleteByTokenHash(ctx context.Context, tokenHash strin
 	return args.Error(0)
 }
 
+func (m *mockSessionRepo) RotateToken(ctx context.Context, oldHash string, newSession *models.Session) error {
+	args := m.Called(ctx, oldHash, newSession)
+	return args.Error(0)
+}
+
 func (m *mockSessionRepo) DeleteAllByUserID(ctx context.Context, userID string) ([]string, error) {
 	args := m.Called(ctx, userID)
 	hashes, _ := args.Get(0).([]string)

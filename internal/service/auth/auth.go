@@ -43,6 +43,7 @@ type sessionRepository interface {
 	GetByTokenHash(ctx context.Context, tokenHash string) (*models.Session, error)
 	DeleteByID(ctx context.Context, sessionID, userID string) (string, error)
 	DeleteByTokenHash(ctx context.Context, tokenHash string) error
+	RotateToken(ctx context.Context, oldHash string, newSession *models.Session) error
 	DeleteAllByUserID(ctx context.Context, userID string) ([]string, error)
 	ListByUserID(ctx context.Context, userID string) ([]*models.Session, error)
 }
@@ -103,7 +104,6 @@ func Register(gRPC *grpc.Server, authService *AuthService) {
 
 func (s *AuthService) Register(ctx context.Context, req *api.RegisterRequest) (*api.RegisterResponse, error) {
 	const op = "auth.Register"
-	log := s.log.With(slog.String("op", op), slog.String("email", req.Email))
 
 	if err := validate.Email(req.Email); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -111,6 +111,9 @@ func (s *AuthService) Register(ctx context.Context, req *api.RegisterRequest) (*
 	if err := validate.Password(req.Password); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+
+	// Log only after validation — avoids writing untrusted/malformed input to logs.
+	log := s.log.With(slog.String("op", op), slog.String("email", req.Email))
 
 	hash, err := password.Hash(req.Password)
 	if err != nil {
@@ -139,6 +142,12 @@ func (s *AuthService) Register(ctx context.Context, req *api.RegisterRequest) (*
 
 func (s *AuthService) Login(ctx context.Context, req *api.LoginRequest) (*api.LoginResponse, error) {
 	const op = "auth.Login"
+
+	if err := validate.Email(req.Email); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// Log only after validation — avoids writing untrusted/malformed input to logs.
 	log := s.log.With(slog.String("op", op), slog.String("email", req.Email))
 
 	ipAddr, userAgent := extractClientInfo(ctx)
@@ -148,7 +157,6 @@ func (s *AuthService) Login(ctx context.Context, req *api.LoginRequest) (*api.Lo
 		locked, err := s.bruteGuard.IsLocked(ctx, req.Email)
 		if err != nil {
 			log.Error("check brute force", slog.String("err", err.Error()))
-			// Fail open: do not block legitimate users if Redis is temporarily down.
 		} else if locked {
 			s.logAudit(nil, auditRepo.EventLoginBlocked, ipAddr, userAgent,
 				map[string]string{"email": req.Email})
@@ -288,7 +296,9 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *api.RefreshTokenReq
 	}
 
 	if time.Now().After(cached.ExpiresAt) {
-		_ = s.sessionRepo.DeleteByTokenHash(ctx, tokenHash)
+		if delErr := s.sessionRepo.DeleteByTokenHash(ctx, tokenHash); delErr != nil && !errors.Is(delErr, sessionRepo.ErrNotFound) {
+			log.Error("delete expired session", slog.String("err", delErr.Error()))
+		}
 		s.deleteSessionFromCache(ctx, tokenHash)
 		return nil, status.Error(codes.Unauthenticated, "refresh token expired")
 	}
@@ -321,17 +331,18 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *api.RefreshTokenReq
 		ExpiresAt: time.Now().Add(s.refreshTTL),
 	}
 
-	// Invalidate old, create new.
-	if err = s.sessionRepo.DeleteByTokenHash(ctx, tokenHash); err != nil {
-		log.Error("delete old session", slog.String("err", err.Error()))
+	// Atomically invalidate the old session and create the new one.
+	// RotateToken uses a DB transaction and verifies the old token was actually
+	// deleted (RowsAffected == 1), preventing concurrent refresh-token replay.
+	if err = s.sessionRepo.RotateToken(ctx, tokenHash, newSess); err != nil {
+		if errors.Is(err, sessionRepo.ErrNotFound) {
+			// Another concurrent request already consumed this token.
+			return nil, status.Error(codes.Unauthenticated, "invalid refresh token")
+		}
+		log.Error("rotate session", slog.String("err", err.Error()))
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 	s.deleteSessionFromCache(ctx, tokenHash)
-
-	if err = s.sessionRepo.Create(ctx, newSess); err != nil {
-		log.Error("create new session", slog.String("err", err.Error()))
-		return nil, status.Error(codes.Internal, "internal error")
-	}
 	s.cacheSession(ctx, newHash, &redisSession{
 		SessionID: newSess.ID,
 		UserID:    cached.UserID,
@@ -357,14 +368,18 @@ func (s *AuthService) Logout(ctx context.Context, req *api.LogoutRequest) (*api.
 	tokenHash := token.Hash(req.RefreshToken)
 
 	// Resolve the user ID for audit purposes before deleting. The cache is the
-	// cheapest source; if it misses we leave userID nil rather than doing an
-	// extra DB round-trip on the hot path.
+	// cheapest source; on a miss we leave userID nil rather than doing an extra
+	// DB round-trip on the hot path.
 	var userID *string
 	if cached, err := s.getCachedSession(ctx, tokenHash); err == nil {
 		userID = strPtr(cached.UserID)
 	}
 
 	if err := s.sessionRepo.DeleteByTokenHash(ctx, tokenHash); err != nil {
+		if errors.Is(err, sessionRepo.ErrNotFound) {
+			// Token already expired or revoked — idempotent success.
+			return &api.LogoutResponse{}, nil
+		}
 		s.log.With(slog.String("op", op)).Error("delete session", slog.String("err", err.Error()))
 		return nil, status.Error(codes.Internal, "internal error")
 	}
@@ -479,7 +494,10 @@ func (s *AuthService) extractUserIDFromCtx(ctx context.Context) (string, error) 
 		return "", status.Error(codes.Unauthenticated, "missing authorization header")
 	}
 
-	tokenStr := strings.TrimPrefix(authHeaders[0], "Bearer ")
+	tokenStr, ok := strings.CutPrefix(authHeaders[0], "Bearer ")
+	if !ok {
+		return "", status.Error(codes.Unauthenticated, "invalid authorization header format")
+	}
 	claims, err := s.jwtManager.ValidateAccessToken(tokenStr)
 	if err != nil {
 		return "", status.Error(codes.Unauthenticated, "invalid access token")
