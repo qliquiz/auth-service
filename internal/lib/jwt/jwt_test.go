@@ -6,6 +6,7 @@ import (
 
 	"auth-service/internal/lib/jwt"
 
+	jwtpkg "github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -91,6 +92,48 @@ func TestManager_MalformedToken(t *testing.T) {
 			assert.Error(t, err)
 		})
 	}
+}
+
+func TestManager_MissingExpClaim(t *testing.T) {
+	t.Parallel()
+
+	// Craft a token with a valid HS256 signature but no exp field.
+	// WithExpirationRequired() must reject it.
+	secret := []byte(testSecret)
+	rawClaims := jwtpkg.MapClaims{
+		"uid":   "user-123",
+		"email": "alice@example.com",
+		"roles": []string{"user"},
+		"sub":   "user-123",
+		"iss":   "auth-service",
+		// deliberately no "exp"
+	}
+	raw := jwtpkg.NewWithClaims(jwtpkg.SigningMethodHS256, rawClaims)
+	tokenStr, err := raw.SignedString(secret)
+	require.NoError(t, err)
+
+	m := jwt.New(testSecret, time.Hour)
+	_, err = m.ValidateAccessToken(tokenStr)
+	assert.Error(t, err, "token without exp must be rejected")
+}
+
+func TestManager_WrongIssuer(t *testing.T) {
+	t.Parallel()
+
+	// Sign a token with the correct secret but wrong issuer.
+	secret := []byte(testSecret)
+	claims := jwtpkg.RegisteredClaims{
+		Subject:   "user-123",
+		Issuer:    "other-service",
+		ExpiresAt: jwtpkg.NewNumericDate(time.Now().Add(time.Hour)),
+	}
+	raw := jwtpkg.NewWithClaims(jwtpkg.SigningMethodHS256, claims)
+	tokenStr, err := raw.SignedString(secret)
+	require.NoError(t, err)
+
+	m := jwt.New(testSecret, time.Hour)
+	_, err = m.ValidateAccessToken(tokenStr)
+	assert.Error(t, err, "token with wrong issuer must be rejected")
 }
 
 func TestManager_TokenNotExpiredYet(t *testing.T) {

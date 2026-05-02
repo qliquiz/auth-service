@@ -56,7 +56,10 @@ func (m *Manager) ValidateAccessToken(tokenStr string) (*Claims, error) {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 		}
 		return m.secret, nil
-	})
+	},
+		jwt.WithExpirationRequired(),
+		jwt.WithIssuer("auth-service"),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("parse token: %w", err)
 	}
