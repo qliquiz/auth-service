@@ -56,7 +56,7 @@ func newFixture(t *testing.T) *fixture {
 
 	uRepo := &mockUserRepo{}
 	sRepo := &mockSessionRepo{}
-	jwtMgr := jwtlib.New(testJWTSecret, 15*time.Minute)
+	jwtMgr := jwtlib.NewHS256Manager(testJWTSecret, 15*time.Minute)
 	cache := rediscache.New(redisClient)
 
 	svc := auth.New(uRepo, sRepo, jwtMgr, cache, nil, nil, nil, slog.Default(), testRefreshTTL)
@@ -183,7 +183,7 @@ func TestLogin_Success(t *testing.T) {
 	assert.NotEmpty(t, resp.RefreshToken)
 
 	// Validate the returned access token.
-	jwtMgr := jwtlib.New(testJWTSecret, 15*time.Minute)
+	jwtMgr := jwtlib.NewHS256Manager(testJWTSecret, 15*time.Minute)
 	claims, err := jwtMgr.ValidateAccessToken(resp.AccessToken)
 	require.NoError(t, err)
 	assert.Equal(t, user.ID, claims.UserID)
@@ -270,7 +270,7 @@ func TestValidateToken_Expired(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 
-	expiredMgr := jwtlib.New(testJWTSecret, -time.Second)
+	expiredMgr := jwtlib.NewHS256Manager(testJWTSecret, -time.Second)
 	tok, err := expiredMgr.GenerateAccessToken("user-001", "alice@example.com", nil)
 	require.NoError(t, err)
 
@@ -324,7 +324,7 @@ func TestRefreshToken_Success_CacheHit(t *testing.T) {
 	// Refresh token must rotate (new one issued).
 	assert.NotEqual(t, loginResp.RefreshToken, refreshResp.RefreshToken)
 	// New access token must be valid.
-	jwtMgr := jwtlib.New(testJWTSecret, 15*time.Minute)
+	jwtMgr := jwtlib.NewHS256Manager(testJWTSecret, 15*time.Minute)
 	claims, err := jwtMgr.ValidateAccessToken(refreshResp.AccessToken)
 	require.NoError(t, err)
 	assert.Equal(t, user.ID, claims.UserID)
@@ -628,7 +628,7 @@ func newFixtureWithGuard(t *testing.T, maxAttempts int) *fixture {
 
 	uRepo := &mockUserRepo{}
 	sRepo := &mockSessionRepo{}
-	jwtMgr := jwtlib.New(testJWTSecret, 15*time.Minute)
+	jwtMgr := jwtlib.NewHS256Manager(testJWTSecret, 15*time.Minute)
 	guard := bruteforce.New(redisClient, maxAttempts, time.Minute, 15*time.Minute)
 	cache := rediscache.New(redisClient)
 
@@ -755,7 +755,7 @@ func newFixtureWithAudit(t *testing.T) (*fixture, *auditSink) {
 
 	uRepo := &mockUserRepo{}
 	sRepo := &mockSessionRepo{}
-	jwtMgr := jwtlib.New(testJWTSecret, 15*time.Minute)
+	jwtMgr := jwtlib.NewHS256Manager(testJWTSecret, 15*time.Minute)
 	sink := newAuditSink()
 	cache := rediscache.New(redisClient)
 
@@ -985,7 +985,7 @@ func TestLogin_ExpiredRefreshTTL_NotCached(t *testing.T) {
 
 	uRepo := &mockUserRepo{}
 	sRepo := &mockSessionRepo{}
-	jwtMgr := jwtlib.New(testJWTSecret, 15*time.Minute)
+	jwtMgr := jwtlib.NewHS256Manager(testJWTSecret, 15*time.Minute)
 	cache := rediscache.New(rc)
 	// Negative TTL → sessions expire instantly → cacheSession must skip Set.
 	svc := auth.New(uRepo, sRepo, jwtMgr, cache, nil, nil, nil, slog.Default(), -time.Hour)

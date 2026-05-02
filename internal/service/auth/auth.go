@@ -1,15 +1,6 @@
 package auth
 
 import (
-	"auth-service/gen/api"
-	"auth-service/internal/domain/models"
-	"auth-service/internal/lib/bruteforce"
-	"auth-service/internal/lib/password"
-	"auth-service/internal/lib/token"
-	"auth-service/internal/lib/validate"
-	sessionRepo "auth-service/internal/repository/session"
-	userRepo "auth-service/internal/repository/user"
-	"auth-service/pkg/ports"
 	"context"
 	"errors"
 	"fmt"
@@ -23,6 +14,16 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
+
+	"auth-service/gen/api"
+	"auth-service/internal/domain/models"
+	"auth-service/internal/lib/bruteforce"
+	"auth-service/internal/lib/password"
+	"auth-service/internal/lib/token"
+	"auth-service/internal/lib/validate"
+	sessionRepo "auth-service/internal/repository/session"
+	userRepo "auth-service/internal/repository/user"
+	"auth-service/pkg/ports"
 )
 
 // AuthService implements api.AuthServiceServer. All dependencies are injected
@@ -31,11 +32,11 @@ type AuthService struct {
 	api.UnimplementedAuthServiceServer
 	userStore    ports.UserStore
 	sessionStore ports.SessionStore
-	auditStore   ports.AuditStore   // nil = audit disabled
+	auditStore   ports.AuditStore // nil = audit disabled
 	tokenMgr     ports.AccessTokenManager
 	cache        ports.SessionCache
-	hook         ports.EventHook    // nil = no custom hook
-	bruteGuard   *bruteforce.Guard  // nil = brute-force protection disabled
+	hook         ports.EventHook   // nil = no custom hook
+	bruteGuard   *bruteforce.Guard // nil = brute-force protection disabled
 	log          *slog.Logger
 	refreshTTL   time.Duration
 }
@@ -101,7 +102,7 @@ func (s *AuthService) Register(ctx context.Context, req *api.RegisterRequest) (*
 	ipAddr, userAgent := extractClientInfo(ctx)
 	s.logAudit(strPtr(user.ID), ports.AuditEventRegister, ipAddr, userAgent,
 		map[string]string{"email": user.Email})
-	s.fireHook(ctx, user.ID, user.Email, ports.AuditEventRegister, ipAddr, userAgent,
+	s.fireHook(user.ID, user.Email, ports.AuditEventRegister, ipAddr, userAgent,
 		map[string]string{"email": user.Email})
 
 	log.Info("user registered", slog.String("user_id", user.ID))
@@ -130,7 +131,7 @@ func (s *AuthService) Login(ctx context.Context, req *api.LoginRequest) (*api.Lo
 		} else if locked {
 			s.logAudit(nil, ports.AuditEventLoginBlocked, ipAddr, userAgent,
 				map[string]string{"email": req.Email})
-			s.fireHook(ctx, "", req.Email, ports.AuditEventLoginBlocked, ipAddr, userAgent,
+			s.fireHook("", req.Email, ports.AuditEventLoginBlocked, ipAddr, userAgent,
 				map[string]string{"email": req.Email})
 			return nil, status.Error(codes.ResourceExhausted,
 				"account temporarily locked due to too many failed attempts, try again later")
@@ -142,7 +143,7 @@ func (s *AuthService) Login(ctx context.Context, req *api.LoginRequest) (*api.Lo
 		if errors.Is(err, userRepo.ErrNotFound) {
 			s.logAudit(nil, ports.AuditEventLoginFailure, ipAddr, userAgent,
 				map[string]string{"email": req.Email})
-			s.fireHook(ctx, "", req.Email, ports.AuditEventLoginFailure, ipAddr, userAgent,
+			s.fireHook("", req.Email, ports.AuditEventLoginFailure, ipAddr, userAgent,
 				map[string]string{"email": req.Email})
 			return nil, status.Error(codes.Unauthenticated, "invalid credentials")
 		}
@@ -162,7 +163,7 @@ func (s *AuthService) Login(ctx context.Context, req *api.LoginRequest) (*api.Lo
 			} else if wasLocked {
 				s.logAudit(strPtr(user.ID), ports.AuditEventLoginBlocked, ipAddr, userAgent,
 					map[string]string{"email": req.Email})
-				s.fireHook(ctx, user.ID, user.Email, ports.AuditEventLoginBlocked, ipAddr, userAgent,
+				s.fireHook(user.ID, user.Email, ports.AuditEventLoginBlocked, ipAddr, userAgent,
 					map[string]string{"email": req.Email})
 				return nil, status.Error(codes.ResourceExhausted,
 					"account temporarily locked due to too many failed attempts, try again later")
@@ -170,7 +171,7 @@ func (s *AuthService) Login(ctx context.Context, req *api.LoginRequest) (*api.Lo
 		}
 		s.logAudit(strPtr(user.ID), ports.AuditEventLoginFailure, ipAddr, userAgent,
 			map[string]string{"email": req.Email})
-		s.fireHook(ctx, user.ID, user.Email, ports.AuditEventLoginFailure, ipAddr, userAgent,
+		s.fireHook(user.ID, user.Email, ports.AuditEventLoginFailure, ipAddr, userAgent,
 			map[string]string{"email": req.Email})
 		return nil, status.Error(codes.Unauthenticated, "invalid credentials")
 	}
@@ -221,7 +222,7 @@ func (s *AuthService) Login(ctx context.Context, req *api.LoginRequest) (*api.Lo
 
 	s.logAudit(strPtr(user.ID), ports.AuditEventLoginSuccess, ipAddr, userAgent,
 		map[string]string{"email": user.Email, "device_id": deviceID, "session_id": sess.ID})
-	s.fireHook(ctx, user.ID, user.Email, ports.AuditEventLoginSuccess, ipAddr, userAgent,
+	s.fireHook(user.ID, user.Email, ports.AuditEventLoginSuccess, ipAddr, userAgent,
 		map[string]string{"email": user.Email, "device_id": deviceID, "session_id": sess.ID})
 
 	log.Info("user logged in", slog.String("user_id", user.ID), slog.String("session_id", sess.ID))
@@ -333,7 +334,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *api.RefreshTokenReq
 
 	s.logAudit(strPtr(cached.UserID), ports.AuditEventTokenRefresh, ipAddr, userAgent,
 		map[string]string{"session_id": newSess.ID})
-	s.fireHook(ctx, cached.UserID, cached.UserEmail, ports.AuditEventTokenRefresh, ipAddr, userAgent,
+	s.fireHook(cached.UserID, cached.UserEmail, ports.AuditEventTokenRefresh, ipAddr, userAgent,
 		map[string]string{"session_id": newSess.ID})
 
 	return &api.RefreshTokenResponse{
@@ -375,7 +376,7 @@ func (s *AuthService) Logout(ctx context.Context, req *api.LogoutRequest) (*api.
 	if userID != nil {
 		uid = *userID
 	}
-	s.fireHook(ctx, uid, userEmail, ports.AuditEventLogout, ipAddr, userAgent, nil)
+	s.fireHook(uid, userEmail, ports.AuditEventLogout, ipAddr, userAgent, nil)
 
 	return &api.LogoutResponse{}, nil
 }
@@ -404,7 +405,8 @@ func (s *AuthService) LogoutAll(ctx context.Context, _ *api.LogoutAllRequest) (*
 	ipAddr, userAgent := extractClientInfo(ctx)
 	s.logAudit(strPtr(userID), ports.AuditEventLogoutAll, ipAddr, userAgent,
 		map[string]string{"sessions_revoked": fmt.Sprintf("%d", len(hashes))})
-	s.fireHook(ctx, userID, "", ports.AuditEventLogoutAll, ipAddr, userAgent,
+	// email is empty here — JWT claims carry only the userID in these operations.
+	s.fireHook(userID, "", ports.AuditEventLogoutAll, ipAddr, userAgent,
 		map[string]string{"sessions_revoked": fmt.Sprintf("%d", len(hashes))})
 
 	log.Info("all sessions revoked", slog.String("user_id", userID), slog.Int("count", len(hashes)))
@@ -467,7 +469,8 @@ func (s *AuthService) RevokeSession(ctx context.Context, req *api.RevokeSessionR
 	ipAddr, userAgent := extractClientInfo(ctx)
 	s.logAudit(strPtr(userID), ports.AuditEventSessionRevoke, ipAddr, userAgent,
 		map[string]string{"session_id": req.SessionId})
-	s.fireHook(ctx, userID, "", ports.AuditEventSessionRevoke, ipAddr, userAgent,
+	// email is empty here — JWT claims carry only the userID in these operations.
+	s.fireHook(userID, "", ports.AuditEventSessionRevoke, ipAddr, userAgent,
 		map[string]string{"session_id": req.SessionId})
 
 	return &api.RevokeSessionResponse{}, nil
@@ -579,7 +582,7 @@ func (s *AuthService) logAudit(userID *string, eventType ports.AuditEventType, i
 }
 
 // fireHook dispatches an auth lifecycle event to the configured hook asynchronously.
-func (s *AuthService) fireHook(ctx context.Context, userID, email string, eventType ports.AuditEventType, ip, ua string, meta map[string]string) {
+func (s *AuthService) fireHook(userID, email string, eventType ports.AuditEventType, ip, ua string, meta map[string]string) {
 	if s.hook == nil {
 		return
 	}

@@ -61,6 +61,8 @@ func (m *mockSessionRepo) ListByUserID(ctx context.Context, userID string) ([]*m
 }
 
 // mockCache is a testify mock for ports.SessionCache.
+// Use it in tests that need to assert specific cache interactions
+// (e.g., verifying cache-miss fallback logic without miniredis).
 type mockCache struct{ mock.Mock }
 
 func (m *mockCache) Set(ctx context.Context, hash string, sess *ports.CachedSession, ttl time.Duration) error {
