@@ -85,7 +85,9 @@ func (r *SessionRepository) RotateToken(ctx context.Context, oldHash string, new
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func(tx pgx.Tx, ctx context.Context) {
+		_ = tx.Rollback(ctx)
+	}(tx, ctx)
 
 	tag, err := tx.Exec(ctx, `DELETE FROM sessions WHERE token_hash = $1`, oldHash)
 	if err != nil {
