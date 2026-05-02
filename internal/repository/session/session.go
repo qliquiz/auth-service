@@ -68,8 +68,47 @@ func (r *SessionRepository) DeleteByID(ctx context.Context, sessionID, userID st
 
 func (r *SessionRepository) DeleteByTokenHash(ctx context.Context, tokenHash string) error {
 	const q = `DELETE FROM sessions WHERE token_hash = $1`
-	_, err := r.db.Exec(ctx, q, tokenHash)
-	return err
+	tag, err := r.db.Exec(ctx, q, tokenHash)
+	if err != nil {
+		return fmt.Errorf("delete session by token hash: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// RotateToken atomically replaces oldHash with newSession in a single transaction.
+// Returns ErrNotFound if oldHash no longer exists (concurrent rotation or replay).
+func (r *SessionRepository) RotateToken(ctx context.Context, oldHash string, newSession *models.Session) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	tag, err := tx.Exec(ctx, `DELETE FROM sessions WHERE token_hash = $1`, oldHash)
+	if err != nil {
+		return fmt.Errorf("delete old session: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+
+	const insertQ = `
+		INSERT INTO sessions (user_id, token_hash, device_id, user_agent, ip_address, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, created_at, last_used_at`
+
+	err = tx.QueryRow(ctx, insertQ,
+		newSession.UserID, newSession.TokenHash, newSession.DeviceID,
+		newSession.UserAgent, newSession.IPAddress, newSession.ExpiresAt,
+	).Scan(&newSession.ID, &newSession.CreatedAt, &newSession.LastUsedAt)
+	if err != nil {
+		return fmt.Errorf("create new session: %w", err)
+	}
+
+	return tx.Commit(ctx)
 }
 
 func (r *SessionRepository) DeleteAllByUserID(ctx context.Context, userID string) ([]string, error) {

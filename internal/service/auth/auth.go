@@ -43,6 +43,7 @@ type sessionRepository interface {
 	GetByTokenHash(ctx context.Context, tokenHash string) (*models.Session, error)
 	DeleteByID(ctx context.Context, sessionID, userID string) (string, error)
 	DeleteByTokenHash(ctx context.Context, tokenHash string) error
+	RotateToken(ctx context.Context, oldHash string, newSession *models.Session) error
 	DeleteAllByUserID(ctx context.Context, userID string) ([]string, error)
 	ListByUserID(ctx context.Context, userID string) ([]*models.Session, error)
 }
@@ -288,7 +289,9 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *api.RefreshTokenReq
 	}
 
 	if time.Now().After(cached.ExpiresAt) {
-		_ = s.sessionRepo.DeleteByTokenHash(ctx, tokenHash)
+		if delErr := s.sessionRepo.DeleteByTokenHash(ctx, tokenHash); delErr != nil && !errors.Is(delErr, sessionRepo.ErrNotFound) {
+			log.Error("delete expired session", slog.String("err", delErr.Error()))
+		}
 		s.deleteSessionFromCache(ctx, tokenHash)
 		return nil, status.Error(codes.Unauthenticated, "refresh token expired")
 	}
@@ -321,17 +324,18 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *api.RefreshTokenReq
 		ExpiresAt: time.Now().Add(s.refreshTTL),
 	}
 
-	// Invalidate old, create new.
-	if err = s.sessionRepo.DeleteByTokenHash(ctx, tokenHash); err != nil {
-		log.Error("delete old session", slog.String("err", err.Error()))
+	// Atomically invalidate the old session and create the new one.
+	// RotateToken uses a DB transaction and verifies the old token was actually
+	// deleted (RowsAffected == 1), preventing concurrent refresh-token replay.
+	if err = s.sessionRepo.RotateToken(ctx, tokenHash, newSess); err != nil {
+		if errors.Is(err, sessionRepo.ErrNotFound) {
+			// Another concurrent request already consumed this token.
+			return nil, status.Error(codes.Unauthenticated, "invalid refresh token")
+		}
+		log.Error("rotate session", slog.String("err", err.Error()))
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 	s.deleteSessionFromCache(ctx, tokenHash)
-
-	if err = s.sessionRepo.Create(ctx, newSess); err != nil {
-		log.Error("create new session", slog.String("err", err.Error()))
-		return nil, status.Error(codes.Internal, "internal error")
-	}
 	s.cacheSession(ctx, newHash, &redisSession{
 		SessionID: newSess.ID,
 		UserID:    cached.UserID,
@@ -365,6 +369,10 @@ func (s *AuthService) Logout(ctx context.Context, req *api.LogoutRequest) (*api.
 	}
 
 	if err := s.sessionRepo.DeleteByTokenHash(ctx, tokenHash); err != nil {
+		if errors.Is(err, sessionRepo.ErrNotFound) {
+			// Token already expired or revoked — idempotent success.
+			return &api.LogoutResponse{}, nil
+		}
 		s.log.With(slog.String("op", op)).Error("delete session", slog.String("err", err.Error()))
 		return nil, status.Error(codes.Internal, "internal error")
 	}
