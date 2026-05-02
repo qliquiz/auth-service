@@ -367,6 +367,14 @@ func (s *AuthService) Logout(ctx context.Context, req *api.LogoutRequest) (*api.
 
 	tokenHash := token.Hash(req.RefreshToken)
 
+	// Resolve the user ID for audit purposes before deleting. The cache is the
+	// cheapest source; on a miss we leave userID nil rather than doing an extra
+	// DB round-trip on the hot path.
+	var userID *string
+	if cached, err := s.getCachedSession(ctx, tokenHash); err == nil {
+		userID = strPtr(cached.UserID)
+	}
+
 	if err := s.sessionRepo.DeleteByTokenHash(ctx, tokenHash); err != nil {
 		if errors.Is(err, sessionRepo.ErrNotFound) {
 			// Token already expired or revoked — idempotent success.
@@ -378,7 +386,7 @@ func (s *AuthService) Logout(ctx context.Context, req *api.LogoutRequest) (*api.
 	s.deleteSessionFromCache(ctx, tokenHash)
 
 	ipAddr, userAgent := extractClientInfo(ctx)
-	s.logAudit(nil, auditRepo.EventLogout, ipAddr, userAgent, nil)
+	s.logAudit(userID, auditRepo.EventLogout, ipAddr, userAgent, nil)
 
 	return &api.LogoutResponse{}, nil
 }

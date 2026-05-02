@@ -66,7 +66,7 @@ func New(redisClient *redis.Client, maxAttempts int, window, lockoutTTL time.Dur
 	}
 }
 
-func (g *Guard) localEntry(email string) *localEntry {
+func (g *Guard) getLocalEntry(email string) *localEntry {
 	v, _ := g.local.LoadOrStore(email, &localEntry{})
 	return v.(*localEntry)
 }
@@ -77,7 +77,7 @@ func (g *Guard) IsLocked(ctx context.Context, email string) (bool, error) {
 	n, err := g.redis.Exists(ctx, lockedKeyPrefix+email).Result()
 	if err != nil {
 		// Redis unavailable: consult the in-process fallback.
-		e := g.localEntry(email)
+		e := g.getLocalEntry(email)
 		e.mu.Lock()
 		locked := e.isLocked(time.Now())
 		e.mu.Unlock()
@@ -106,7 +106,7 @@ func (g *Guard) RecordFailure(ctx context.Context, email string) (locked bool, e
 	count, err := g.redis.Eval(ctx, luaIncrExpire, []string{attemptsKey}, int64(g.window.Seconds())).Int64()
 	if err != nil {
 		// Redis unavailable: record failure in the in-process fallback.
-		e := g.localEntry(email)
+		e := g.getLocalEntry(email)
 		e.mu.Lock()
 		wasLocked := e.recordFailure(time.Now(), g.maxAttempts, g.window, g.lockoutTTL)
 		e.mu.Unlock()
@@ -135,7 +135,7 @@ func (g *Guard) Reset(ctx context.Context, email string) {
 }
 
 // AttemptsRemaining returns how many more failures are allowed before lockout.
-// Returns 0 if already locked.
+// Returns 0 if already locked. Falls back to the in-process map when Redis is unavailable.
 func (g *Guard) AttemptsRemaining(ctx context.Context, email string) (int, error) {
 	locked, err := g.IsLocked(ctx, email)
 	if err != nil || locked {
@@ -147,7 +147,12 @@ func (g *Guard) AttemptsRemaining(ctx context.Context, email string) (int, error
 		if err == redis.Nil {
 			return g.maxAttempts, nil
 		}
-		return 0, fmt.Errorf("bruteforce remaining: %w", err)
+		// Redis unavailable: read the count from the in-process fallback.
+		e := g.getLocalEntry(email)
+		e.mu.Lock()
+		remaining := max(g.maxAttempts-e.count, 0)
+		e.mu.Unlock()
+		return remaining, nil
 	}
 
 	return max(g.maxAttempts-count, 0), nil

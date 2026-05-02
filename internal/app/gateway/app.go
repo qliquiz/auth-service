@@ -65,11 +65,6 @@ func (a *App) Run() error {
 	return a.run()
 }
 
-func (a *App) MustRun() {
-	if err := a.run(); err != nil {
-		panic(err)
-	}
-}
 
 func (a *App) run() error {
 	const op = "gateway.run"

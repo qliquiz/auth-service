@@ -220,6 +220,22 @@ func TestReset_RedisDown_ClearsLocalLock(t *testing.T) {
 	assert.False(t, isLocked, "Reset must clear the local lock when Redis is down")
 }
 
+func TestAttemptsRemaining_RedisDown_FallsBackToLocal(t *testing.T) {
+	t.Parallel()
+	g := newGuardWithDeadRedis(t)
+	ctx := context.Background()
+	email := "remaining-fallback@example.com"
+
+	remaining, err := g.AttemptsRemaining(ctx, email)
+	require.NoError(t, err)
+	assert.Equal(t, testMax, remaining, "no failures yet — full attempts remaining")
+
+	_, _ = g.RecordFailure(ctx, email)
+	remaining, err = g.AttemptsRemaining(ctx, email)
+	require.NoError(t, err)
+	assert.Equal(t, testMax-1, remaining, "one failure recorded locally")
+}
+
 func TestMultipleEmails_Isolated(t *testing.T) {
 	t.Parallel()
 	g, _ := newGuard(t)

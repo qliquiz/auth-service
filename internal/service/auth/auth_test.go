@@ -849,7 +849,8 @@ func TestLogout_AuditEventLogged(t *testing.T) {
 
 	e := sink.next(t)
 	assert.Equal(t, auditRepo.EventLogout, e.EventType)
-	assert.Nil(t, e.UserID, "Logout is unauthenticated — no userID in audit event")
+	require.NotNil(t, e.UserID, "userID resolved from Redis cache before session deletion")
+	assert.Equal(t, user.ID, *e.UserID)
 }
 
 // ── Internal error paths ───────────────────────────────────────────────────────
@@ -873,12 +874,11 @@ func TestLogout_InternalError(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 
-	ctx := f.ctxWithBearerToken(t, "user-001", "alice@example.com")
 	plainToken, hashedToken, _ := token.Generate()
 	f.sRepo.On("DeleteByTokenHash", mock.Anything, hashedToken).
 		Return(fmt.Errorf("db error"))
 
-	_, err := f.svc.Logout(ctx, &api.LogoutRequest{RefreshToken: plainToken})
+	_, err := f.svc.Logout(context.Background(), &api.LogoutRequest{RefreshToken: plainToken})
 	require.Error(t, err)
 	assert.Equal(t, codes.Internal, status.Code(err))
 }
