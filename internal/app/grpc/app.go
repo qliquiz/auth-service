@@ -32,6 +32,12 @@ func New(
 	}
 }
 
+// Run starts the gRPC server and blocks until it stops. Returns any startup or
+// serve error so the caller can handle it without a panic.
+func (a *App) Run() error {
+	return a.run()
+}
+
 func (a *App) MustRun() {
 	if err := a.run(); err != nil {
 		panic(err)

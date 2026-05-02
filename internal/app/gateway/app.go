@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
@@ -35,6 +36,7 @@ type App struct {
 	port       int
 	grpcTarget string
 	env        string
+	cancelGW   context.CancelFunc
 }
 
 func New(log *slog.Logger, port int, grpcPort int, env string) *App {
@@ -46,6 +48,12 @@ func New(log *slog.Logger, port int, grpcPort int, env string) *App {
 	}
 }
 
+// Run starts the HTTP gateway and blocks until it stops. Returns any startup or
+// serve error so the caller can handle it without a panic.
+func (a *App) Run() error {
+	return a.run()
+}
+
 func (a *App) MustRun() {
 	if err := a.run(); err != nil {
 		panic(err)
@@ -54,12 +62,14 @@ func (a *App) MustRun() {
 
 func (a *App) run() error {
 	const op = "gateway.run"
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	a.cancelGW = cancel
 
 	mux := runtime.NewServeMux()
 	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
 
 	if err := api.RegisterAuthServiceHandlerFromEndpoint(ctx, mux, a.grpcTarget, opts); err != nil {
+		cancel()
 		return fmt.Errorf("%s: %w", op, err)
 	}
 
@@ -85,8 +95,12 @@ func (a *App) run() error {
 	a.log.Info("starting gateway", slog.Int("port", a.port))
 
 	a.server = &http.Server{
-		Addr:    fmt.Sprintf(":%d", a.port),
-		Handler: mux,
+		Addr:              fmt.Sprintf(":%d", a.port),
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	if err := a.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -98,5 +112,8 @@ func (a *App) run() error {
 
 func (a *App) Stop(ctx context.Context) error {
 	a.log.Info("stopping gateway")
+	if a.cancelGW != nil {
+		a.cancelGW()
+	}
 	return a.server.Shutdown(ctx)
 }
