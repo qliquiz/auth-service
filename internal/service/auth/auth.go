@@ -157,7 +157,6 @@ func (s *AuthService) Login(ctx context.Context, req *api.LoginRequest) (*api.Lo
 		locked, err := s.bruteGuard.IsLocked(ctx, req.Email)
 		if err != nil {
 			log.Error("check brute force", slog.String("err", err.Error()))
-			// Fail open: do not block legitimate users if Redis is temporarily down.
 		} else if locked {
 			s.logAudit(nil, auditRepo.EventLoginBlocked, ipAddr, userAgent,
 				map[string]string{"email": req.Email})
@@ -368,14 +367,6 @@ func (s *AuthService) Logout(ctx context.Context, req *api.LogoutRequest) (*api.
 
 	tokenHash := token.Hash(req.RefreshToken)
 
-	// Resolve the user ID for audit purposes before deleting. The cache is the
-	// cheapest source; if it misses we leave userID nil rather than doing an
-	// extra DB round-trip on the hot path.
-	var userID *string
-	if cached, err := s.getCachedSession(ctx, tokenHash); err == nil {
-		userID = strPtr(cached.UserID)
-	}
-
 	if err := s.sessionRepo.DeleteByTokenHash(ctx, tokenHash); err != nil {
 		if errors.Is(err, sessionRepo.ErrNotFound) {
 			// Token already expired or revoked — idempotent success.
@@ -387,7 +378,7 @@ func (s *AuthService) Logout(ctx context.Context, req *api.LogoutRequest) (*api.
 	s.deleteSessionFromCache(ctx, tokenHash)
 
 	ipAddr, userAgent := extractClientInfo(ctx)
-	s.logAudit(userID, auditRepo.EventLogout, ipAddr, userAgent, nil)
+	s.logAudit(nil, auditRepo.EventLogout, ipAddr, userAgent, nil)
 
 	return &api.LogoutResponse{}, nil
 }

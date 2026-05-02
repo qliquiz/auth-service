@@ -12,6 +12,7 @@ import (
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
@@ -31,26 +32,30 @@ const scalarHTML = `<!DOCTYPE html>
 </html>`
 
 type App struct {
-	server     *http.Server
-	log        *slog.Logger
-	port       int
-	grpcTarget string
-	env        string
-	cancelGW   context.CancelFunc
+	server      *http.Server
+	log         *slog.Logger
+	port        int
+	grpcTarget  string
+	grpcTLSCert string
+	env         string
+	cancelGW    context.CancelFunc
 }
 
 // New creates the gateway App. grpcTarget overrides the default localhost:<grpcPort>
 // target — set it when the gRPC server runs in a different host/container.
-func New(log *slog.Logger, port int, grpcPort int, grpcTarget string, env string) *App {
+// grpcTLSCert is the path to the gRPC server's TLS certificate; leave empty for
+// local/dev single-host deployments (insecure loopback).
+func New(log *slog.Logger, port int, grpcPort int, grpcTarget string, grpcTLSCert string, env string) *App {
 	target := grpcTarget
 	if target == "" {
 		target = fmt.Sprintf("localhost:%d", grpcPort)
 	}
 	return &App{
-		log:        log,
-		port:       port,
-		grpcTarget: target,
-		env:        env,
+		log:         log,
+		port:        port,
+		grpcTarget:  target,
+		grpcTLSCert: grpcTLSCert,
+		env:         env,
 	}
 }
 
@@ -72,7 +77,21 @@ func (a *App) run() error {
 	a.cancelGW = cancel
 
 	mux := runtime.NewServeMux()
-	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+
+	var transportCreds grpc.DialOption
+	if a.grpcTLSCert != "" {
+		tlsCreds, err := credentials.NewClientTLSFromFile(a.grpcTLSCert, "")
+		if err != nil {
+			return fmt.Errorf("%s: load gRPC TLS cert: %w", op, err)
+		}
+		transportCreds = grpc.WithTransportCredentials(tlsCreds)
+	} else {
+		if a.env == "prod" {
+			a.log.Warn("gateway→gRPC connection is unencrypted; set GATEWAY_GRPC_TLS_CERT in production")
+		}
+		transportCreds = grpc.WithTransportCredentials(insecure.NewCredentials())
+	}
+	opts := []grpc.DialOption{transportCreds}
 
 	if err := api.RegisterAuthServiceHandlerFromEndpoint(ctx, mux, a.grpcTarget, opts); err != nil {
 		cancel()

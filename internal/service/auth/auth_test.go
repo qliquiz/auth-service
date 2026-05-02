@@ -449,6 +449,17 @@ func TestLogout_Success(t *testing.T) {
 	f.sRepo.AssertExpectations(t)
 }
 
+func TestLogout_AlreadyRevoked_IdempotentSuccess(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	plainToken, hashedToken, _ := token.Generate()
+	f.sRepo.On("DeleteByTokenHash", mock.Anything, hashedToken).Return(sessionRepo.ErrNotFound)
+
+	_, err := f.svc.Logout(context.Background(), &api.LogoutRequest{RefreshToken: plainToken})
+	require.NoError(t, err, "already-revoked token must return success (idempotent)")
+}
+
 func TestLogout_ClearsRedisCache(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
@@ -811,7 +822,7 @@ func TestRegister_AuditEventLogged(t *testing.T) {
 	assert.Equal(t, "user-001", *e.UserID)
 }
 
-func TestLogout_AuditEventLogged_WithUserID(t *testing.T) {
+func TestLogout_AuditEventLogged(t *testing.T) {
 	t.Parallel()
 	f, sink := newFixtureWithAudit(t)
 	user := fakeUser(t)
@@ -827,7 +838,7 @@ func TestLogout_AuditEventLogged_WithUserID(t *testing.T) {
 	require.NoError(t, err)
 	_ = sink.next(t) // consume the login audit event
 
-	// Logout using the refresh token from the login response.
+	// Logout using the refresh token from the login response — no Bearer token required.
 	hashedToken := token.Hash(loginResp.RefreshToken)
 	f.sRepo.On("DeleteByTokenHash", mock.Anything, hashedToken).Return(nil)
 
@@ -838,8 +849,7 @@ func TestLogout_AuditEventLogged_WithUserID(t *testing.T) {
 
 	e := sink.next(t)
 	assert.Equal(t, auditRepo.EventLogout, e.EventType)
-	require.NotNil(t, e.UserID, "user ID must be populated from Redis cache")
-	assert.Equal(t, user.ID, *e.UserID)
+	assert.Nil(t, e.UserID, "Logout is unauthenticated — no userID in audit event")
 }
 
 // ── Internal error paths ───────────────────────────────────────────────────────
@@ -863,11 +873,12 @@ func TestLogout_InternalError(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 
+	ctx := f.ctxWithBearerToken(t, "user-001", "alice@example.com")
 	plainToken, hashedToken, _ := token.Generate()
 	f.sRepo.On("DeleteByTokenHash", mock.Anything, hashedToken).
 		Return(fmt.Errorf("db error"))
 
-	_, err := f.svc.Logout(context.Background(), &api.LogoutRequest{RefreshToken: plainToken})
+	_, err := f.svc.Logout(ctx, &api.LogoutRequest{RefreshToken: plainToken})
 	require.Error(t, err)
 	assert.Equal(t, codes.Internal, status.Code(err))
 }
