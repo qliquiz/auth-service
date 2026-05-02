@@ -56,6 +56,7 @@ func main() {
 		log,
 		cfg.GRPC.Port,
 		cfg.Gateway.Port,
+		cfg.Gateway.GRPCTarget,
 		cfg.GRPC.Timeout,
 		cfg.JWT,
 		cfg.Security,

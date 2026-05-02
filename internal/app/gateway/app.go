@@ -37,11 +37,17 @@ type App struct {
 	env        string
 }
 
-func New(log *slog.Logger, port int, grpcPort int, env string) *App {
+// New creates the gateway App. grpcTarget overrides the default localhost:<grpcPort>
+// target — set it when the gRPC server runs in a different host/container.
+func New(log *slog.Logger, port int, grpcPort int, grpcTarget string, env string) *App {
+	target := grpcTarget
+	if target == "" {
+		target = fmt.Sprintf("localhost:%d", grpcPort)
+	}
 	return &App{
 		log:        log,
 		port:       port,
-		grpcTarget: fmt.Sprintf("localhost:%d", grpcPort),
+		grpcTarget: target,
 		env:        env,
 	}
 }

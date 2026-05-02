@@ -31,6 +31,7 @@ func New(
 	log *slog.Logger,
 	grpcPort int,
 	gatewayPort int,
+	gatewayGRPCTarget string,
 	grpcTimeout time.Duration,
 	jwtCfg config.JWTConfig,
 	secCfg config.SecurityConfig,
@@ -60,7 +61,7 @@ func New(
 			interceptor.RateLimit(globalLimiter, loginLimiter, log),
 		),
 	)
-	gatewayApplication := gateway.New(log, gatewayPort, grpcPort, env)
+	gatewayApplication := gateway.New(log, gatewayPort, grpcPort, gatewayGRPCTarget, env)
 
 	return &App{
 		GrpcApp:    grpcApplication,

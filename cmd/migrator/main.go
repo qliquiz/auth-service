@@ -28,7 +28,7 @@ func main() {
 	}
 	dsn := fmt.Sprintf("postgres://%v:%v@%v:%v/%v?sslmode=disable",
 		cfg.Username, cfg.Password, cfg.Host, cfg.Port, cfg.DbName)
-	log.Printf("connecting to %v", dsn)
+	log.Printf("connecting to postgres://%v:***@%v:%v/%v", cfg.Username, cfg.Host, cfg.Port, cfg.DbName)
 
 	m, err := migrate.New(
 		fmt.Sprintf("file://%s", migrationPath),
@@ -38,9 +38,12 @@ func main() {
 		log.Fatalf("failed to initialize migrations: %v\n", err)
 	}
 	defer func(m *migrate.Migrate) {
-		err, _ = m.Close()
-		if err != nil {
-			fmt.Printf("failed to close migrations: %v\n", err)
+		srcErr, dbErr := m.Close()
+		if srcErr != nil {
+			fmt.Printf("failed to close migration source: %v\n", srcErr)
+		}
+		if dbErr != nil {
+			fmt.Printf("failed to close migration db: %v\n", dbErr)
 		}
 	}(m)
 
