@@ -32,12 +32,19 @@ func (r *SessionRepository) Create(ctx context.Context, s *models.Session) error
 }
 
 func (r *SessionRepository) GetByTokenHash(ctx context.Context, tokenHash string) (*models.Session, error) {
+	// UPDATE last_used_at atomically with the SELECT so the field reflects actual
+	// token usage, not just creation time.
 	const q = `
-		SELECT s.id, s.user_id, u.email, s.token_hash, s.device_id, s.user_agent,
-		       s.ip_address, s.expires_at, s.last_used_at, s.created_at
-		FROM sessions s
-		JOIN users u ON u.id = s.user_id
-		WHERE s.token_hash = $1`
+		WITH touch AS (
+			UPDATE sessions SET last_used_at = NOW()
+			WHERE token_hash = $1
+			RETURNING id, user_id, token_hash, device_id, user_agent,
+			          ip_address, expires_at, last_used_at, created_at
+		)
+		SELECT t.id, t.user_id, u.email, t.token_hash, t.device_id, t.user_agent,
+		       t.ip_address, t.expires_at, t.last_used_at, t.created_at
+		FROM touch t
+		JOIN users u ON u.id = t.user_id`
 
 	var s models.Session
 	err := r.db.QueryRow(ctx, q, tokenHash).Scan(

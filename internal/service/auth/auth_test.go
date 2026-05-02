@@ -440,16 +440,28 @@ func TestLogout_Success(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 
+	ctx := f.ctxWithBearerToken(t, "user-001", "alice@example.com")
 	plainToken, hashedToken, _ := token.Generate()
 	f.sRepo.On("DeleteByTokenHash", mock.Anything, hashedToken).Return(nil)
 
-	resp, err := f.svc.Logout(context.Background(), &api.LogoutRequest{
+	resp, err := f.svc.Logout(ctx, &api.LogoutRequest{
 		RefreshToken: plainToken,
 	})
 
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	f.sRepo.AssertExpectations(t)
+}
+
+func TestLogout_NoAuthHeader_ReturnsUnauthenticated(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	plainToken, _, _ := token.Generate()
+	_, err := f.svc.Logout(context.Background(), &api.LogoutRequest{RefreshToken: plainToken})
+	require.Error(t, err)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+	f.sRepo.AssertNotCalled(t, "DeleteByTokenHash")
 }
 
 func TestLogout_ClearsRedisCache(t *testing.T) {
@@ -472,9 +484,10 @@ func TestLogout_ClearsRedisCache(t *testing.T) {
 	// Key must be present before logout.
 	require.True(t, f.miniRed.Exists("refresh:"+hashedToken))
 
+	ctx := f.ctxWithBearerToken(t, user.ID, user.Email)
 	f.sRepo.On("DeleteByTokenHash", mock.Anything, hashedToken).Return(nil)
 
-	_, err = f.svc.Logout(context.Background(), &api.LogoutRequest{RefreshToken: plainToken})
+	_, err = f.svc.Logout(ctx, &api.LogoutRequest{RefreshToken: plainToken})
 	require.NoError(t, err)
 
 	// Key must be gone after logout.
@@ -834,7 +847,8 @@ func TestLogout_AuditEventLogged_WithUserID(t *testing.T) {
 	hashedToken := token.Hash(loginResp.RefreshToken)
 	f.sRepo.On("DeleteByTokenHash", mock.Anything, hashedToken).Return(nil)
 
-	_, err = f.svc.Logout(context.Background(), &api.LogoutRequest{
+	logoutCtx := f.ctxWithBearerToken(t, user.ID, user.Email)
+	_, err = f.svc.Logout(logoutCtx, &api.LogoutRequest{
 		RefreshToken: loginResp.RefreshToken,
 	})
 	require.NoError(t, err)
@@ -866,11 +880,12 @@ func TestLogout_InternalError(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 
+	ctx := f.ctxWithBearerToken(t, "user-001", "alice@example.com")
 	plainToken, hashedToken, _ := token.Generate()
 	f.sRepo.On("DeleteByTokenHash", mock.Anything, hashedToken).
 		Return(fmt.Errorf("db error"))
 
-	_, err := f.svc.Logout(context.Background(), &api.LogoutRequest{RefreshToken: plainToken})
+	_, err := f.svc.Logout(ctx, &api.LogoutRequest{RefreshToken: plainToken})
 	require.Error(t, err)
 	assert.Equal(t, codes.Internal, status.Code(err))
 }

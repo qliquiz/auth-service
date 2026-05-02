@@ -59,6 +59,7 @@ func main() {
 		cfg.GRPC.Timeout,
 		cfg.JWT,
 		cfg.Security,
+		cfg.Gateway,
 		cfg.Env,
 	)
 

@@ -34,6 +34,7 @@ func New(
 	grpcTimeout time.Duration,
 	jwtCfg config.JWTConfig,
 	secCfg config.SecurityConfig,
+	gatewayCfg config.GatewayConfig,
 	env string,
 ) *App {
 	uRepo := userRepo.New(db.Pool)
@@ -60,7 +61,7 @@ func New(
 			interceptor.RateLimit(globalLimiter, loginLimiter, log),
 		),
 	)
-	gatewayApplication := gateway.New(log, gatewayPort, grpcPort, env)
+	gatewayApplication := gateway.New(log, gatewayPort, grpcPort, gatewayCfg.GRPCTLSCert, env)
 
 	return &App{
 		GrpcApp:    grpcApplication,

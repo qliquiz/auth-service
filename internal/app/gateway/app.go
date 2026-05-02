@@ -11,6 +11,7 @@ import (
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
@@ -30,19 +31,23 @@ const scalarHTML = `<!DOCTYPE html>
 </html>`
 
 type App struct {
-	server     *http.Server
-	log        *slog.Logger
-	port       int
-	grpcTarget string
-	env        string
+	server      *http.Server
+	log         *slog.Logger
+	port        int
+	grpcTarget  string
+	grpcTLSCert string
+	env         string
 }
 
-func New(log *slog.Logger, port int, grpcPort int, env string) *App {
+// New creates the gateway App. grpcTLSCert is a path to the gRPC server's TLS
+// certificate; leave empty to use an unencrypted loopback connection (dev only).
+func New(log *slog.Logger, port int, grpcPort int, grpcTLSCert string, env string) *App {
 	return &App{
-		log:        log,
-		port:       port,
-		grpcTarget: fmt.Sprintf("localhost:%d", grpcPort),
-		env:        env,
+		log:         log,
+		port:        port,
+		grpcTarget:  fmt.Sprintf("localhost:%d", grpcPort),
+		grpcTLSCert: grpcTLSCert,
+		env:         env,
 	}
 }
 
@@ -57,7 +62,21 @@ func (a *App) run() error {
 	ctx := context.Background()
 
 	mux := runtime.NewServeMux()
-	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+
+	var transportCreds grpc.DialOption
+	if a.grpcTLSCert != "" {
+		tlsCreds, err := credentials.NewClientTLSFromFile(a.grpcTLSCert, "")
+		if err != nil {
+			return fmt.Errorf("%s: load gRPC TLS cert: %w", op, err)
+		}
+		transportCreds = grpc.WithTransportCredentials(tlsCreds)
+	} else {
+		if a.env == "prod" {
+			a.log.Warn("gateway→gRPC connection is unencrypted; set GATEWAY_GRPC_TLS_CERT in production")
+		}
+		transportCreds = grpc.WithTransportCredentials(insecure.NewCredentials())
+	}
+	opts := []grpc.DialOption{transportCreds}
 
 	if err := api.RegisterAuthServiceHandlerFromEndpoint(ctx, mux, a.grpcTarget, opts); err != nil {
 		return fmt.Errorf("%s: %w", op, err)

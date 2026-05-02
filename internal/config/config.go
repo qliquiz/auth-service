@@ -25,7 +25,11 @@ type GRPCConfig struct {
 }
 
 type GatewayConfig struct {
-	Port int `yaml:"port" env:"GATEWAY_PORT" env-default:"8080"`
+	Port        int    `yaml:"port" env:"GATEWAY_PORT" env-default:"8080"`
+	// GRPCTLSCert is the path to the gRPC server's TLS certificate file.
+	// When set, the gateway connects to the gRPC backend over TLS.
+	// Leave empty for local/dev single-host deployments (insecure loopback).
+	GRPCTLSCert string `yaml:"grpc_tls_cert" env:"GATEWAY_GRPC_TLS_CERT" env-default:""`
 }
 
 type JWTConfig struct {
