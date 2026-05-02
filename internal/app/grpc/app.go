@@ -38,7 +38,6 @@ func (a *App) Run() error {
 	return a.run()
 }
 
-
 func (a *App) run() error {
 	const op = "grpcapp.run"
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", a.port))

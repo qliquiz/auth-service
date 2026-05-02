@@ -65,7 +65,6 @@ func (a *App) Run() error {
 	return a.run()
 }
 
-
 func (a *App) run() error {
 	const op = "gateway.run"
 	ctx, cancel := context.WithCancel(context.Background())

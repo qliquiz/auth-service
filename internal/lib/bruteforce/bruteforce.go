@@ -4,6 +4,7 @@ package bruteforce
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -144,7 +145,7 @@ func (g *Guard) AttemptsRemaining(ctx context.Context, email string) (int, error
 
 	count, err := g.redis.Get(ctx, attemptsKeyPrefix+email).Int()
 	if err != nil {
-		if err == redis.Nil {
+		if errors.Is(err, redis.Nil) {
 			return g.maxAttempts, nil
 		}
 		// Redis unavailable: read the count from the in-process fallback.
