@@ -48,6 +48,7 @@ type sessionRepository interface {
 	ListByUserID(ctx context.Context, userID string) ([]*models.Session, error)
 }
 
+// TODO(Task 6): migrate to ports.AuditStore once the full service refactor lands.
 // auditRepository is the interface the service uses to write security audit events.
 type auditRepository interface {
 	Log(ctx context.Context, e *auditRepo.Event) error

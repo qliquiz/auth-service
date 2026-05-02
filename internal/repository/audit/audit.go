@@ -2,12 +2,14 @@
 package audit
 
 import (
-	"auth-service/pkg/ports"
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"auth-service/pkg/ports"
 )
 
 // Aliases so callers that already import this package keep compiling.
@@ -36,7 +38,7 @@ type StoredEvent struct {
 	IPAddress string
 	UserAgent string
 	Metadata  map[string]string
-	CreatedAt string // RFC3339
+	CreatedAt time.Time
 }
 
 // Repository is the PostgreSQL implementation of ports.AuditStore.
@@ -47,6 +49,9 @@ type Repository struct {
 func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
+
+// Compile-time assertion: Repository must implement ports.AuditStore.
+var _ ports.AuditStore = (*Repository)(nil)
 
 // Log inserts a single audit event. Callers typically invoke this in a
 // goroutine so that a slow DB write does not block the request path.
