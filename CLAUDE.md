@@ -174,37 +174,37 @@ swappable without touching the service layer.
 
 ### pkg/ports/ — Public interfaces
 
-| File | Interfaces / Types |
-|------|--------------------|
-| `audit.go` | `AuditStore`, `AuditEvent`, `AuditEventType` + 8 event constants |
-| `storage.go` | `UserStore`, `SessionStore` |
-| `cache.go` | `SessionCache`, `CachedSession` |
-| `token.go` | `AccessTokenManager`, `Claims` |
-| `hooks.go` | `EventHook`, `HookEvent` |
+| File         | Interfaces / Types                                               |
+|--------------|------------------------------------------------------------------|
+| `audit.go`   | `AuditStore`, `AuditEvent`, `AuditEventType` + 8 event constants |
+| `storage.go` | `UserStore`, `SessionStore`                                      |
+| `cache.go`   | `SessionCache`, `CachedSession`                                  |
+| `token.go`   | `AccessTokenManager`, `Claims`                                   |
+| `hooks.go`   | `EventHook`, `HookEvent`                                         |
 
 All types in `pkg/ports/` are safe to import from external modules.
 
 ### Concrete adapters
 
-| Adapter | Package | Implements |
-|---------|---------|------------|
-| PostgreSQL user repo | `internal/repository/user` | `ports.UserStore` |
+| Adapter                 | Package                       | Implements           |
+|-------------------------|-------------------------------|----------------------|
+| PostgreSQL user repo    | `internal/repository/user`    | `ports.UserStore`    |
 | PostgreSQL session repo | `internal/repository/session` | `ports.SessionStore` |
-| PostgreSQL audit repo | `internal/repository/audit` | `ports.AuditStore` |
-| Redis session cache | `internal/cache/redis` | `ports.SessionCache` |
-| In-memory user store | `pkg/storage/memory` | `ports.UserStore` |
-| In-memory session store | `pkg/storage/memory` | `ports.SessionStore` |
-| In-memory session cache | `pkg/cache/memory` | `ports.SessionCache` |
+| PostgreSQL audit repo   | `internal/repository/audit`   | `ports.AuditStore`   |
+| Redis session cache     | `internal/cache/redis`        | `ports.SessionCache` |
+| In-memory user store    | `pkg/storage/memory`          | `ports.UserStore`    |
+| In-memory session store | `pkg/storage/memory`          | `ports.SessionStore` |
+| In-memory session cache | `pkg/cache/memory`            | `ports.SessionCache` |
 
 ### JWT signing strategies
 
 Three strategies are available, selected via `JWT_ALGORITHM`:
 
-| `JWT_ALGORITHM` | Type | Use case |
-|-----------------|------|----------|
-| `hs256` (default) | Symmetric | Single-service or shared-secret deployments |
-| `rs256` | Asymmetric RSA | Distributed: other services validate without the private key |
-| `es256` | Asymmetric ECDSA | Same as RS256 but smaller tokens |
+| `JWT_ALGORITHM`   | Type             | Use case                                                     |
+|-------------------|------------------|--------------------------------------------------------------|
+| `hs256` (default) | Symmetric        | Single-service or shared-secret deployments                  |
+| `rs256`           | Asymmetric RSA   | Distributed: other services validate without the private key |
+| `es256`           | Asymmetric ECDSA | Same as RS256 but smaller tokens                             |
 
 For `rs256`/`es256`, set `JWT_PRIVATE_KEY_PATH` to a PEM-encoded private key file.
 Wiring is in `internal/app/app.go` — currently defaults to HS256; extend to read

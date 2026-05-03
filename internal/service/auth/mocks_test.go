@@ -60,23 +60,6 @@ func (m *mockSessionRepo) ListByUserID(ctx context.Context, userID string) ([]*m
 	return s, args.Error(1)
 }
 
-// mockCache is a testify mock for ports.SessionCache.
-// Use it in tests that need to assert specific cache interactions
-// (e.g., verifying cache-miss fallback logic without miniredis).
-type mockCache struct{ mock.Mock }
-
-func (m *mockCache) Set(ctx context.Context, hash string, sess *ports.CachedSession, ttl time.Duration) error {
-	return m.Called(ctx, hash, sess, ttl).Error(0)
-}
-func (m *mockCache) Get(ctx context.Context, hash string) (*ports.CachedSession, error) {
-	args := m.Called(ctx, hash)
-	s, _ := args.Get(0).(*ports.CachedSession)
-	return s, args.Error(1)
-}
-func (m *mockCache) Delete(ctx context.Context, hash string) error {
-	return m.Called(ctx, hash).Error(0)
-}
-
 // auditSink captures events via a buffered channel. Implements ports.AuditStore.
 type auditSink struct {
 	events chan *ports.AuditEvent

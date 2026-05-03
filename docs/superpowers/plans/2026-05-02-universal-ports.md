@@ -1,38 +1,46 @@
 # Universal Ports — Phase 1 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:
+> executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Extract private service interfaces into a public `pkg/ports/` layer, abstract Redis and JWT as swappable strategies, add in-memory adapters for testing, and introduce an optional EventHook extension point — all without breaking the existing API surface.
+**Goal:** Extract private service interfaces into a public `pkg/ports/` layer, abstract Redis and JWT as swappable
+strategies, add in-memory adapters for testing, and introduce an optional EventHook extension point — all without
+breaking the existing API surface.
 
-**Architecture:** The service follows Clean Architecture (API → Service → Repository). Currently the service layer uses private interfaces (`userRepository`, `sessionRepository`, `auditRepository`) and concrete types (`*redis.Client`, `*jwtlib.Manager`). This plan makes all four of these public interfaces in `pkg/ports/`, adds a `SessionCache` port (abstracting Redis), an `AccessTokenManager` port (abstracting HS256/RS256/ES256), an `EventHook` port for extensibility, and in-memory adapters so tests and local dev no longer need Docker.
+**Architecture:** The service follows Clean Architecture (API → Service → Repository). Currently the service layer uses
+private interfaces (`userRepository`, `sessionRepository`, `auditRepository`) and concrete types (`*redis.Client`,
+`*jwtlib.Manager`). This plan makes all four of these public interfaces in `pkg/ports/`, adds a `SessionCache` port (
+abstracting Redis), an `AccessTokenManager` port (abstracting HS256/RS256/ES256), an `EventHook` port for extensibility,
+and in-memory adapters so tests and local dev no longer need Docker.
 
-**Tech Stack:** Go 1.22+, `github.com/golang-jwt/jwt/v5`, `github.com/redis/go-redis/v9`, `github.com/jackc/pgx/v5`, `github.com/stretchr/testify`
+**Tech Stack:** Go 1.22+, `github.com/golang-jwt/jwt/v5`, `github.com/redis/go-redis/v9`, `github.com/jackc/pgx/v5`,
+`github.com/stretchr/testify`
 
 ---
 
 ## File map
 
-| Action   | Path                                    | Responsibility                                          |
-|----------|-----------------------------------------|---------------------------------------------------------|
-| Create   | `pkg/ports/audit.go`                   | AuditEvent, AuditEventType constants, AuditStore iface  |
-| Create   | `pkg/ports/storage.go`                 | UserStore, SessionStore interfaces                       |
-| Create   | `pkg/ports/cache.go`                   | SessionCache interface (replaces raw *redis.Client)      |
-| Create   | `pkg/ports/token.go`                   | AccessTokenManager interface + Claims type               |
-| Create   | `pkg/ports/hooks.go`                   | EventHook interface + event payload types                |
-| Modify   | `internal/repository/audit/audit.go`   | Import audit types from pkg/ports instead of defining   |
-| Modify   | `internal/lib/jwt/jwt.go`              | Implement AccessTokenManager, support HS256/RS256/ES256  |
-| Create   | `internal/cache/redis/redis.go`        | Redis adapter implementing ports.SessionCache            |
-| Modify   | `internal/service/auth/auth.go`        | Use ports.* interfaces everywhere                        |
-| Modify   | `internal/service/auth/mocks_test.go`  | Update mock method signatures to match ports.*          |
-| Modify   | `internal/app/app.go`                  | Wire new adapters; select JWT strategy from config       |
-| Modify   | `internal/config/config.go`            | Add JWTConfig.Algorithm field                            |
-| Create   | `pkg/storage/memory/user.go`           | In-memory UserStore (for tests / lightweight deploys)   |
-| Create   | `pkg/storage/memory/user_test.go`      | Tests for MemoryUserStore                               |
-| Create   | `pkg/storage/memory/session.go`        | In-memory SessionStore                                  |
-| Create   | `pkg/storage/memory/session_test.go`   | Tests for MemorySessionStore                            |
-| Create   | `pkg/cache/memory/cache.go`            | In-memory SessionCache                                  |
-| Create   | `pkg/cache/memory/cache_test.go`       | Tests for MemorySessionCache                            |
-| Modify   | `CLAUDE.md`                            | Document new architecture, pkg/* packages, JWT config   |
+| Action | Path                                  | Responsibility                                          |
+|--------|---------------------------------------|---------------------------------------------------------|
+| Create | `pkg/ports/audit.go`                  | AuditEvent, AuditEventType constants, AuditStore iface  |
+| Create | `pkg/ports/storage.go`                | UserStore, SessionStore interfaces                      |
+| Create | `pkg/ports/cache.go`                  | SessionCache interface (replaces raw *redis.Client)     |
+| Create | `pkg/ports/token.go`                  | AccessTokenManager interface + Claims type              |
+| Create | `pkg/ports/hooks.go`                  | EventHook interface + event payload types               |
+| Modify | `internal/repository/audit/audit.go`  | Import audit types from pkg/ports instead of defining   |
+| Modify | `internal/lib/jwt/jwt.go`             | Implement AccessTokenManager, support HS256/RS256/ES256 |
+| Create | `internal/cache/redis/redis.go`       | Redis adapter implementing ports.SessionCache           |
+| Modify | `internal/service/auth/auth.go`       | Use ports.* interfaces everywhere                       |
+| Modify | `internal/service/auth/mocks_test.go` | Update mock method signatures to match ports.*          |
+| Modify | `internal/app/app.go`                 | Wire new adapters; select JWT strategy from config      |
+| Modify | `internal/config/config.go`           | Add JWTConfig.Algorithm field                           |
+| Create | `pkg/storage/memory/user.go`          | In-memory UserStore (for tests / lightweight deploys)   |
+| Create | `pkg/storage/memory/user_test.go`     | Tests for MemoryUserStore                               |
+| Create | `pkg/storage/memory/session.go`       | In-memory SessionStore                                  |
+| Create | `pkg/storage/memory/session_test.go`  | Tests for MemorySessionStore                            |
+| Create | `pkg/cache/memory/cache.go`           | In-memory SessionCache                                  |
+| Create | `pkg/cache/memory/cache_test.go`      | Tests for MemorySessionCache                            |
+| Modify | `CLAUDE.md`                           | Document new architecture, pkg/* packages, JWT config   |
 
 ---
 
@@ -43,6 +51,7 @@ Any external implementor of `AuditStore` needs to import these types, which mean
 We fix this by lifting the types into `pkg/ports`.
 
 **Files:**
+
 - Create: `pkg/ports/audit.go`
 - Modify: `internal/repository/audit/audit.go`
 
@@ -107,7 +116,8 @@ Expected: no errors.
 
 - [ ] **Step 1.3: Update audit repository to use ports types**
 
-Edit `internal/repository/audit/audit.go` — replace the local `EventType`, `Event` and their constants with imports from `pkg/ports`:
+Edit `internal/repository/audit/audit.go` — replace the local `EventType`, `Event` and their constants with imports from
+`pkg/ports`:
 
 ```go
 // Package audit provides the PostgreSQL implementation of ports.AuditStore.
@@ -212,11 +222,14 @@ git commit -m "feat(ports): lift AuditEvent types into pkg/ports/audit.go"
 
 ## Task 2: UserStore and SessionStore interfaces → pkg/ports/storage.go
 
-Move the private `userRepository` and `sessionRepository` interfaces out of `internal/service/auth` and into the public `pkg/ports` package. The service will then depend on the public interfaces.
+Move the private `userRepository` and `sessionRepository` interfaces out of `internal/service/auth` and into the public
+`pkg/ports` package. The service will then depend on the public interfaces.
 
 **Files:**
+
 - Create: `pkg/ports/storage.go`
-- Modify: `internal/service/auth/auth.go` (update private interface references — Task 5 does the full swap; here we just add the public interfaces so they can be referenced)
+- Modify: `internal/service/auth/auth.go` (update private interface references — Task 5 does the full swap; here we just
+  add the public interfaces so they can be referenced)
 
 - [ ] **Step 2.1: Create pkg/ports/storage.go**
 
@@ -280,9 +293,12 @@ git commit -m "feat(ports): add public UserStore and SessionStore interfaces"
 
 ## Task 3: AccessTokenManager interface → pkg/ports/token.go
 
-The `AuthService` currently holds a `*jwtlib.Manager` concrete type. Making this an interface allows RS256/ES256 strategies to be plugged in — critical for distributed systems where other services need to validate access tokens using a public key (no shared secret).
+The `AuthService` currently holds a `*jwtlib.Manager` concrete type. Making this an interface allows RS256/ES256
+strategies to be plugged in — critical for distributed systems where other services need to validate access tokens using
+a public key (no shared secret).
 
 **Files:**
+
 - Create: `pkg/ports/token.go`
 - Modify: `internal/lib/jwt/jwt.go` (add RS256 + ES256, implement the interface)
 - Modify: `internal/config/config.go` (add `Algorithm` field)
@@ -372,7 +388,9 @@ Expected: FAIL — `jwtlib.NewRS256Manager undefined`.
 
 - [ ] **Step 3.4: Add RS256 and ES256 strategies to internal/lib/jwt/jwt.go**
 
-Replace `internal/lib/jwt/jwt.go` entirely. The file now exports three constructors — `NewHS256Manager` (renamed from `New`), `NewRS256Manager`, `NewES256Manager` — all returning types that implement `ports.AccessTokenManager`. A backward-compat alias `New = NewHS256Manager` prevents breaking callers.
+Replace `internal/lib/jwt/jwt.go` entirely. The file now exports three constructors — `NewHS256Manager` (renamed from
+`New`), `NewRS256Manager`, `NewES256Manager` — all returning types that implement `ports.AccessTokenManager`. A
+backward-compat alias `New = NewHS256Manager` prevents breaking callers.
 
 ```go
 // Package jwt provides access-token strategies: HS256 (shared secret),
@@ -591,9 +609,12 @@ git commit -m "feat(ports): add AccessTokenManager interface with HS256/RS256/ES
 
 ## Task 4: SessionCache interface + Redis adapter
 
-The `AuthService` currently injects `*redis.Client` directly and calls `Set`/`Get`/`Del` inline. Abstracting this behind a `SessionCache` interface makes it possible to swap Redis for another backend (Memcached, in-memory) or to disable caching entirely — without changing the service layer.
+The `AuthService` currently injects `*redis.Client` directly and calls `Set`/`Get`/`Del` inline. Abstracting this behind
+a `SessionCache` interface makes it possible to swap Redis for another backend (Memcached, in-memory) or to disable
+caching entirely — without changing the service layer.
 
 **Files:**
+
 - Create: `pkg/ports/cache.go`
 - Create: `internal/cache/redis/redis.go`
 
@@ -756,9 +777,11 @@ git commit -m "feat(ports): add SessionCache interface and Redis adapter"
 
 ## Task 5: EventHook interface → pkg/ports/hooks.go
 
-Event hooks let downstream projects observe auth lifecycle events (registration, login, logout) without forking the service. A no-op default means passing `nil` is valid — all hook calls are guarded.
+Event hooks let downstream projects observe auth lifecycle events (registration, login, logout) without forking the
+service. A no-op default means passing `nil` is valid — all hook calls are guarded.
 
 **Files:**
+
 - Create: `pkg/ports/hooks.go`
 - Create: `pkg/hooks/noop.go`
 
@@ -829,9 +852,11 @@ git commit -m "feat(ports): add EventHook interface with no-op default"
 
 ## Task 6: Refactor AuthService to use pkg/ports interfaces
 
-This is the central wiring step. The `AuthService` drops all concrete types (`*redis.Client`, `*jwtlib.Manager`) and private interface aliases in favour of the public `pkg/ports` interfaces defined in Tasks 1–5.
+This is the central wiring step. The `AuthService` drops all concrete types (`*redis.Client`, `*jwtlib.Manager`) and
+private interface aliases in favour of the public `pkg/ports` interfaces defined in Tasks 1–5.
 
 **Files:**
+
 - Modify: `internal/service/auth/auth.go`
 - Modify: `internal/service/auth/mocks_test.go`
 - Modify: `internal/app/app.go`
@@ -918,6 +943,7 @@ func New(
 - [ ] **Step 6.2: Replace all usages in auth.go method bodies**
 
 Inside the method bodies, rename field accesses:
+
 - `s.userRepo` → `s.userStore`
 - `s.sessionRepo` → `s.sessionStore`
 - `s.auditRepo` → `s.auditStore`
@@ -1000,11 +1026,13 @@ Call `s.fireHook(...)` alongside `s.logAudit(...)` at each event site (Register,
 
 Update `extractUserIDFromCtx` to use `s.tokenMgr.ValidateAccessToken` (already the case, just rename).
 
-Replace `userRepo.ErrNotFound` / `sessionRepo.ErrNotFound` references — these sentinel errors stay in their respective repository packages (no change needed there).
+Replace `userRepo.ErrNotFound` / `sessionRepo.ErrNotFound` references — these sentinel errors stay in their respective
+repository packages (no change needed there).
 
 - [ ] **Step 6.3: Update mocks_test.go**
 
-The mocks now implement `ports.UserStore`, `ports.SessionStore`, and `ports.AuditStore`. The method signatures are identical; only imports change:
+The mocks now implement `ports.UserStore`, `ports.SessionStore`, and `ports.AuditStore`. The method signatures are
+identical; only imports change:
 
 ```go
 package auth_test
@@ -1095,7 +1123,9 @@ func (a *auditSink) next(t *testing.T) *ports.AuditEvent {
 }
 ```
 
-Also add a `mockTokenManager` and `mockCache` for the service tests (the existing tests used `jwtlib.New` and a miniredis; update them to use these mocks or keep using real instances — keeping real JWT manager and a mock cache is simpler):
+Also add a `mockTokenManager` and `mockCache` for the service tests (the existing tests used `jwtlib.New` and a
+miniredis; update them to use these mocks or keep using real instances — keeping real JWT manager and a mock cache is
+simpler):
 
 ```go
 // mockCache is a simple in-memory mock for ports.SessionCache used in unit tests.
@@ -1116,7 +1146,9 @@ func (m *mockCache) Delete(ctx context.Context, hash string) error {
 
 - [ ] **Step 6.4: Update auth_test.go constructor calls**
 
-In `internal/service/auth/auth_test.go`, find all calls to `auth.New(...)` and update them to pass the new parameter order and types. Specifically:
+In `internal/service/auth/auth_test.go`, find all calls to `auth.New(...)` and update them to pass the new parameter
+order and types. Specifically:
+
 - Replace `redisClient` arg with a `*mockCache` (or `miniredis` integration for cache-specific tests).
 - Add `hook` arg as `nil` (no hook in unit tests).
 - Update `auditSink` references from `*auditRepo.Event` to `*ports.AuditEvent`.
@@ -1179,9 +1211,11 @@ git commit -m "refactor(service): use pkg/ports interfaces throughout AuthServic
 
 ## Task 7: In-memory adapters (pkg/storage/memory/ + pkg/cache/memory/)
 
-These adapters let integration and unit tests run without Docker, and enable lightweight deploys (e.g. edge functions, short-lived test environments) where PostgreSQL + Redis are unavailable.
+These adapters let integration and unit tests run without Docker, and enable lightweight deploys (e.g. edge functions,
+short-lived test environments) where PostgreSQL + Redis are unavailable.
 
 **Files:**
+
 - Create: `pkg/storage/memory/user.go`
 - Create: `pkg/storage/memory/user_test.go`
 - Create: `pkg/storage/memory/session.go`
@@ -1707,6 +1741,7 @@ Document the new architecture so the next engineer understands what changed and 
 - [ ] **Step 8.1: Update CLAUDE.md**
 
 Append a new section **"Universal Ports Architecture"** to `CLAUDE.md` explaining:
+
 - The `pkg/ports/` package: what interfaces live there and why they're public
 - The `pkg/storage/memory/` and `pkg/cache/memory/` adapters and when to use them
 - The three JWT strategies (HS256/RS256/ES256) and the `JWT_ALGORITHM` / `JWT_PRIVATE_KEY_PATH` env vars
@@ -1726,21 +1761,23 @@ git commit -m "docs: document pkg/ports architecture, JWT strategies, and in-mem
 
 **Spec coverage check:**
 
-| Requirement (from architectural discussion)               | Task         |
-|-----------------------------------------------------------|--------------|
-| Extract private interfaces to public pkg/ports/           | Tasks 1–2    |
-| AccessTokenManager interface + RS256/ES256 strategies     | Task 3       |
-| SessionCache abstraction (swap Redis)                     | Task 4       |
-| EventHook extension point                                 | Task 5       |
-| Refactor AuthService to use ports                         | Task 6       |
-| In-memory adapters (no Docker for tests)                  | Task 7       |
-| CLAUDE.md updated                                         | Task 8       |
+| Requirement (from architectural discussion)           | Task      |
+|-------------------------------------------------------|-----------|
+| Extract private interfaces to public pkg/ports/       | Tasks 1–2 |
+| AccessTokenManager interface + RS256/ES256 strategies | Task 3    |
+| SessionCache abstraction (swap Redis)                 | Task 4    |
+| EventHook extension point                             | Task 5    |
+| Refactor AuthService to use ports                     | Task 6    |
+| In-memory adapters (no Docker for tests)              | Task 7    |
+| CLAUDE.md updated                                     | Task 8    |
 
 **Placeholder scan:** No TBDs, no vague instructions. All code blocks contain runnable code.
 
 **Type consistency:**
+
 - `ports.AuditEventType` used everywhere (Tasks 1, 5, 6)
 - `ports.CachedSession` used in cache port and Redis adapter (Tasks 4, 6)
 - `ports.Claims` returned by all three JWT managers (Task 3)
 - `jwtClaims.toPorts()` always converts to `*ports.Claims`
-- `userRepo.ErrNotFound` / `sessionRepo.ErrNotFound` sentinel errors remain in their packages and are referenced identically in memory adapters (Task 7)
+- `userRepo.ErrNotFound` / `sessionRepo.ErrNotFound` sentinel errors remain in their packages and are referenced
+  identically in memory adapters (Task 7)
