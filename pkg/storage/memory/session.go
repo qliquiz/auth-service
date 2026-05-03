@@ -16,6 +16,8 @@ import (
 var _ ports.SessionStore = (*SessionStore)(nil)
 
 // SessionStore is a thread-safe, in-memory implementation of ports.SessionStore.
+// sync.Mutex (not RWMutex) is used because GetByTokenHash mutates LastUsedAt,
+// so all methods require an exclusive lock.
 type SessionStore struct {
 	mu     sync.Mutex
 	byID   map[string]*models.Session
@@ -73,12 +75,10 @@ func (s *SessionStore) DeleteByID(_ context.Context, sessionID, userID string) (
 func (s *SessionStore) DeleteByTokenHash(_ context.Context, tokenHash string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	sess, ok := s.byHash[tokenHash]
-	if !ok {
-		return sessionRepo.ErrNotFound
+	if sess, ok := s.byHash[tokenHash]; ok {
+		delete(s.byID, sess.ID)
+		delete(s.byHash, tokenHash)
 	}
-	delete(s.byID, sess.ID)
-	delete(s.byHash, tokenHash)
 	return nil
 }
 

@@ -72,12 +72,9 @@ func (r *SessionRepository) DeleteByID(ctx context.Context, sessionID, userID st
 
 func (r *SessionRepository) DeleteByTokenHash(ctx context.Context, tokenHash string) error {
 	const q = `DELETE FROM sessions WHERE token_hash = $1`
-	tag, err := r.db.Exec(ctx, q, tokenHash)
+	_, err := r.db.Exec(ctx, q, tokenHash)
 	if err != nil {
 		return fmt.Errorf("delete session by token hash: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
 	}
 	return nil
 }

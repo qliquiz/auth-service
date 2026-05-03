@@ -209,3 +209,55 @@ func TestES256RejectsExpired(t *testing.T) {
 	_, err = mgr.ValidateAccessToken(token)
 	require.Error(t, err)
 }
+
+// Cross-algorithm confusion: a token signed by one algorithm must be rejected
+// by a manager expecting a different algorithm.
+
+func TestRS256TokenRejectedByES256Manager(t *testing.T) {
+	t.Parallel()
+	rsaPriv, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	ecPriv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	rsaMgr := jwtlib.NewRS256Manager(rsaPriv, 15*time.Minute)
+	esMgr := jwtlib.NewES256Manager(ecPriv, 15*time.Minute)
+
+	token, err := rsaMgr.GenerateAccessToken("uid-1", "u@e.com", nil)
+	require.NoError(t, err)
+
+	_, err = esMgr.ValidateAccessToken(token)
+	require.Error(t, err, "RS256 token must be rejected by ES256 manager")
+}
+
+func TestES256TokenRejectedByRS256Manager(t *testing.T) {
+	t.Parallel()
+	rsaPriv, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	ecPriv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	esMgr := jwtlib.NewES256Manager(ecPriv, 15*time.Minute)
+	rsaMgr := jwtlib.NewRS256Manager(rsaPriv, 15*time.Minute)
+
+	token, err := esMgr.GenerateAccessToken("uid-2", "u@e.com", nil)
+	require.NoError(t, err)
+
+	_, err = rsaMgr.ValidateAccessToken(token)
+	require.Error(t, err, "ES256 token must be rejected by RS256 manager")
+}
+
+func TestHS256TokenRejectedByRS256Manager(t *testing.T) {
+	t.Parallel()
+	rsaPriv, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	hsMgr := jwtlib.New(testSecret, 15*time.Minute)
+	rsaMgr := jwtlib.NewRS256Manager(rsaPriv, 15*time.Minute)
+
+	token, err := hsMgr.GenerateAccessToken("uid-3", "u@e.com", nil)
+	require.NoError(t, err)
+
+	_, err = rsaMgr.ValidateAccessToken(token)
+	require.Error(t, err, "HS256 token must be rejected by RS256 manager")
+}

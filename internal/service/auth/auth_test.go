@@ -456,7 +456,8 @@ func TestLogout_AlreadyRevoked_IdempotentSuccess(t *testing.T) {
 	f := newFixture(t)
 
 	plainToken, hashedToken, _ := token.Generate()
-	f.sRepo.On("DeleteByTokenHash", mock.Anything, hashedToken).Return(sessionRepo.ErrNotFound)
+	// DeleteByTokenHash is idempotent: returns nil even when the key is absent.
+	f.sRepo.On("DeleteByTokenHash", mock.Anything, hashedToken).Return(nil)
 
 	_, err := f.svc.Logout(context.Background(), &api.LogoutRequest{RefreshToken: plainToken})
 	require.NoError(t, err, "already-revoked token must return success (idempotent)")

@@ -361,10 +361,6 @@ func (s *AuthService) Logout(ctx context.Context, req *api.LogoutRequest) (*api.
 	}
 
 	if err := s.sessionStore.DeleteByTokenHash(ctx, tokenHash); err != nil {
-		if errors.Is(err, sessionRepo.ErrNotFound) {
-			// Token already expired or revoked — idempotent success.
-			return &api.LogoutResponse{}, nil
-		}
 		s.log.With(slog.String("op", op)).Error("delete session", slog.String("err", err.Error()))
 		return nil, status.Error(codes.Internal, "internal error")
 	}

@@ -46,7 +46,8 @@ func (c *Cache) Get(_ context.Context, tokenHash string) (*ports.CachedSession, 
 		delete(c.items, tokenHash)
 		return nil, fmt.Errorf("cache miss: %s", tokenHash)
 	}
-	return e.sess, nil
+	cp := *e.sess
+	return &cp, nil
 }
 
 func (c *Cache) Delete(_ context.Context, tokenHash string) error {
