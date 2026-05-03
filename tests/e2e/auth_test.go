@@ -12,11 +12,13 @@ import (
 	"time"
 
 	"auth-service/gen/api"
+	rediscache "auth-service/internal/cache/redis"
 	jwtlib "auth-service/internal/lib/jwt"
 	"auth-service/internal/repository/session"
 	"auth-service/internal/repository/testutil"
 	"auth-service/internal/repository/user"
 	"auth-service/internal/service/auth"
+	"auth-service/pkg/hooks"
 
 	"github.com/alicebob/miniredis/v2"
 	goredis "github.com/redis/go-redis/v9"
@@ -36,7 +38,7 @@ const bufSize = 1024 * 1024
 
 type testServer struct {
 	client  api.AuthServiceClient
-	jwtMgr  *jwtlib.Manager
+	jwtMgr  *jwtlib.HS256Manager
 	miniRed *miniredis.Miniredis
 }
 
@@ -56,7 +58,8 @@ func newTestServer(t *testing.T) *testServer {
 
 	uRepo := user.New(pool)
 	sRepo := session.New(pool)
-	svc := auth.New(uRepo, sRepo, jwtMgr, redisClient, nil, nil, slog.Default(), 7*24*time.Hour)
+	cache := rediscache.New(redisClient)
+	svc := auth.New(uRepo, sRepo, jwtMgr, cache, nil, nil, hooks.NoOp{}, slog.Default(), 7*24*time.Hour)
 
 	// Start gRPC server over in-memory bufconn.
 	lis := bufconn.Listen(bufSize)
