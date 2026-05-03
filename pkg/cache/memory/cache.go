@@ -34,7 +34,8 @@ func New() *Cache {
 func (c *Cache) Set(_ context.Context, tokenHash string, sess *ports.CachedSession, ttl time.Duration) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.items[tokenHash] = entry{sess: sess, expiresAt: time.Now().Add(ttl)}
+	cp := *sess
+	c.items[tokenHash] = entry{sess: &cp, expiresAt: time.Now().Add(ttl)}
 	return nil
 }
 
