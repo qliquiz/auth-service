@@ -277,7 +277,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *api.RefreshTokenReq
 	}
 
 	if time.Now().After(cached.ExpiresAt) {
-		if delErr := s.sessionStore.DeleteByTokenHash(ctx, tokenHash); delErr != nil && !errors.Is(delErr, sessionRepo.ErrNotFound) {
+		if delErr := s.sessionStore.DeleteByTokenHash(ctx, tokenHash); delErr != nil {
 			log.Error("delete expired session", slog.String("err", delErr.Error()))
 		}
 		s.deleteSessionFromCache(ctx, tokenHash)
