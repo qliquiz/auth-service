@@ -129,7 +129,8 @@ works identically for HTTP and gRPC (via metadata).
 
 Initial schema in `migrations/0001_init.up.sql`. Subsequent migrations:
 
-- `0004` — `users.created_at` / `updated_at` promoted to `TIMESTAMPTZ` (timezone-aware)
+- `0002` — `sessions` table
+- `0003` — `audit_events` table
 
 Current effective `users` schema:
 
