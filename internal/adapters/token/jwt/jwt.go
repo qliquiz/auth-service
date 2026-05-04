@@ -30,6 +30,9 @@ type HS256Manager struct {
 }
 
 func NewHS256Manager(secret string, accessTTL time.Duration) *HS256Manager {
+	if len(secret) < 32 {
+		panic(fmt.Sprintf("JWT secret too short: need ≥32 bytes, got %d", len(secret)))
+	}
 	return &HS256Manager{secret: []byte(secret), accessTTL: accessTTL}
 }
 

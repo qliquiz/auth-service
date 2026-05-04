@@ -179,7 +179,8 @@ gRPC :8082
 
 **Токены:**
 
-- **Access token** — JWT, TTL 15 мин, stateless. Алгоритм подписи задаётся через `JWT_ALGORITHM`: `hs256` (HMAC, по умолчанию), `rs256` (RSA), `es256` (ECDSA). Для `rs256`/`es256` укажите PEM-файл в `JWT_PRIVATE_KEY_PATH`.
+- **Access token** — JWT, TTL 15 мин, stateless. Алгоритм подписи задаётся через `JWT_ALGORITHM`: `hs256` (HMAC, по
+  умолчанию), `rs256` (RSA), `es256` (ECDSA). Для `rs256`/`es256` укажите PEM-файл в `JWT_PRIVATE_KEY_PATH`.
 - **Refresh token** — случайная 32-байтовая строка, хранится как SHA-256 хэш в `sessions` и в Redis (`refresh:{hash}` →
   JSON). TTL совпадает с `expires_at` сессии.
 - **Ротация** — при RefreshToken старый токен атомарно удаляется и новый создаётся в одной DB-транзакции, предотвращая
