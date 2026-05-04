@@ -8,14 +8,14 @@ import (
 	"time"
 
 	"auth-service/gen/api"
+	rediscache "auth-service/internal/adapters/cache/redis"
+	"auth-service/internal/adapters/hooks"
+	jwtlib "auth-service/internal/adapters/token/jwt"
 	"auth-service/internal/domain/models"
+	"auth-service/internal/domain/ports"
 	"auth-service/internal/lib/bruteforce"
-	jwtlib "auth-service/internal/lib/jwt"
 	"auth-service/internal/lib/password"
 	"auth-service/internal/lib/token"
-	auditRepo "auth-service/internal/repository/audit"
-	sessionRepo "auth-service/internal/repository/session"
-	userRepo "auth-service/internal/repository/user"
 	"auth-service/internal/service/auth"
 
 	"github.com/alicebob/miniredis/v2"
@@ -39,7 +39,7 @@ type fixture struct {
 	svc     *auth.AuthService
 	uRepo   *mockUserRepo
 	sRepo   *mockSessionRepo
-	jwtMgr  *jwtlib.Manager
+	jwtMgr  *jwtlib.HS256Manager
 	miniRed *miniredis.Miniredis
 }
 
@@ -55,9 +55,10 @@ func newFixture(t *testing.T) *fixture {
 
 	uRepo := &mockUserRepo{}
 	sRepo := &mockSessionRepo{}
-	jwtMgr := jwtlib.New(testJWTSecret, 15*time.Minute)
+	jwtMgr := jwtlib.NewHS256Manager(testJWTSecret, 15*time.Minute)
+	cache := rediscache.New(redisClient)
 
-	svc := auth.New(uRepo, sRepo, jwtMgr, redisClient, nil, nil, slog.Default(), testRefreshTTL)
+	svc := auth.New(uRepo, sRepo, jwtMgr, cache, nil, nil, hooks.NoOp{}, slog.Default(), testRefreshTTL)
 
 	return &fixture{
 		svc:     svc,
@@ -149,7 +150,7 @@ func TestRegister_EmailAlreadyExists(t *testing.T) {
 	f := newFixture(t)
 
 	f.uRepo.On("Create", mock.Anything, "alice@example.com", mock.AnythingOfType("string")).
-		Return((*models.User)(nil), userRepo.ErrAlreadyExists)
+		Return((*models.User)(nil), ports.ErrUserAlreadyExists)
 
 	_, err := f.svc.Register(context.Background(), &api.RegisterRequest{
 		Email:    "alice@example.com",
@@ -181,7 +182,7 @@ func TestLogin_Success(t *testing.T) {
 	assert.NotEmpty(t, resp.RefreshToken)
 
 	// Validate the returned access token.
-	jwtMgr := jwtlib.New(testJWTSecret, 15*time.Minute)
+	jwtMgr := jwtlib.NewHS256Manager(testJWTSecret, 15*time.Minute)
 	claims, err := jwtMgr.ValidateAccessToken(resp.AccessToken)
 	require.NoError(t, err)
 	assert.Equal(t, user.ID, claims.UserID)
@@ -193,7 +194,7 @@ func TestLogin_UserNotFound(t *testing.T) {
 	f := newFixture(t)
 
 	f.uRepo.On("GetByEmail", mock.Anything, "ghost@example.com").
-		Return((*models.User)(nil), userRepo.ErrNotFound)
+		Return((*models.User)(nil), ports.ErrUserNotFound)
 
 	_, err := f.svc.Login(context.Background(), &api.LoginRequest{
 		Email:    "ghost@example.com",
@@ -268,7 +269,7 @@ func TestValidateToken_Expired(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 
-	expiredMgr := jwtlib.New(testJWTSecret, -time.Second)
+	expiredMgr := jwtlib.NewHS256Manager(testJWTSecret, -time.Second)
 	tok, err := expiredMgr.GenerateAccessToken("user-001", "alice@example.com", nil)
 	require.NoError(t, err)
 
@@ -322,7 +323,7 @@ func TestRefreshToken_Success_CacheHit(t *testing.T) {
 	// Refresh token must rotate (new one issued).
 	assert.NotEqual(t, loginResp.RefreshToken, refreshResp.RefreshToken)
 	// New access token must be valid.
-	jwtMgr := jwtlib.New(testJWTSecret, 15*time.Minute)
+	jwtMgr := jwtlib.NewHS256Manager(testJWTSecret, 15*time.Minute)
 	claims, err := jwtMgr.ValidateAccessToken(refreshResp.AccessToken)
 	require.NoError(t, err)
 	assert.Equal(t, user.ID, claims.UserID)
@@ -366,7 +367,7 @@ func TestRefreshToken_TokenNotFound(t *testing.T) {
 	plainToken, _, _ := token.Generate()
 
 	f.sRepo.On("GetByTokenHash", mock.Anything, mock.AnythingOfType("string")).
-		Return((*models.Session)(nil), sessionRepo.ErrNotFound)
+		Return((*models.Session)(nil), ports.ErrSessionNotFound)
 
 	_, err := f.svc.RefreshToken(context.Background(), &api.RefreshTokenRequest{
 		RefreshToken: plainToken,
@@ -454,7 +455,8 @@ func TestLogout_AlreadyRevoked_IdempotentSuccess(t *testing.T) {
 	f := newFixture(t)
 
 	plainToken, hashedToken, _ := token.Generate()
-	f.sRepo.On("DeleteByTokenHash", mock.Anything, hashedToken).Return(sessionRepo.ErrNotFound)
+	// DeleteByTokenHash is idempotent: returns nil even when the key is absent.
+	f.sRepo.On("DeleteByTokenHash", mock.Anything, hashedToken).Return(nil)
 
 	_, err := f.svc.Logout(context.Background(), &api.LogoutRequest{RefreshToken: plainToken})
 	require.NoError(t, err, "already-revoked token must return success (idempotent)")
@@ -588,7 +590,7 @@ func TestRevokeSession_NotFound(t *testing.T) {
 
 	ctx := f.ctxWithBearerToken(t, "user-001", "alice@example.com")
 	f.sRepo.On("DeleteByID", mock.Anything, "nonexistent", "user-001").
-		Return("", sessionRepo.ErrNotFound)
+		Return("", ports.ErrSessionNotFound)
 
 	_, err := f.svc.RevokeSession(ctx, &api.RevokeSessionRequest{SessionId: "nonexistent"})
 	require.Error(t, err)
@@ -603,7 +605,7 @@ func TestRevokeSession_CannotRevokeOtherUsersSession(t *testing.T) {
 	// The repo enforces ownership via WHERE user_id = $2 — returns ErrNotFound.
 	ctx := f.ctxWithBearerToken(t, "user-002", "bob@example.com")
 	f.sRepo.On("DeleteByID", mock.Anything, "sess-of-user-001", "user-002").
-		Return("", sessionRepo.ErrNotFound)
+		Return("", ports.ErrSessionNotFound)
 
 	_, err := f.svc.RevokeSession(ctx, &api.RevokeSessionRequest{SessionId: "sess-of-user-001"})
 	require.Error(t, err)
@@ -626,10 +628,11 @@ func newFixtureWithGuard(t *testing.T, maxAttempts int) *fixture {
 
 	uRepo := &mockUserRepo{}
 	sRepo := &mockSessionRepo{}
-	jwtMgr := jwtlib.New(testJWTSecret, 15*time.Minute)
+	jwtMgr := jwtlib.NewHS256Manager(testJWTSecret, 15*time.Minute)
 	guard := bruteforce.New(redisClient, maxAttempts, time.Minute, 15*time.Minute)
+	cache := rediscache.New(redisClient)
 
-	svc := auth.New(uRepo, sRepo, jwtMgr, redisClient, nil, guard, slog.Default(), testRefreshTTL)
+	svc := auth.New(uRepo, sRepo, jwtMgr, cache, nil, guard, hooks.NoOp{}, slog.Default(), testRefreshTTL)
 
 	return &fixture{
 		svc:     svc,
@@ -752,10 +755,11 @@ func newFixtureWithAudit(t *testing.T) (*fixture, *auditSink) {
 
 	uRepo := &mockUserRepo{}
 	sRepo := &mockSessionRepo{}
-	jwtMgr := jwtlib.New(testJWTSecret, 15*time.Minute)
+	jwtMgr := jwtlib.NewHS256Manager(testJWTSecret, 15*time.Minute)
 	sink := newAuditSink()
+	cache := rediscache.New(redisClient)
 
-	svc := auth.New(uRepo, sRepo, jwtMgr, redisClient, sink, nil, slog.Default(), testRefreshTTL)
+	svc := auth.New(uRepo, sRepo, jwtMgr, cache, sink, nil, hooks.NoOp{}, slog.Default(), testRefreshTTL)
 
 	return &fixture{
 		svc:     svc,
@@ -781,7 +785,7 @@ func TestLogin_Success_AuditEventLogged(t *testing.T) {
 	require.NoError(t, err)
 
 	e := sink.next(t)
-	assert.Equal(t, auditRepo.EventLoginSuccess, e.EventType)
+	assert.Equal(t, ports.AuditEventLoginSuccess, e.EventType)
 	require.NotNil(t, e.UserID)
 	assert.Equal(t, user.ID, *e.UserID)
 }
@@ -800,7 +804,7 @@ func TestLogin_Failure_AuditEventLogged(t *testing.T) {
 	require.Error(t, err)
 
 	e := sink.next(t)
-	assert.Equal(t, auditRepo.EventLoginFailure, e.EventType)
+	assert.Equal(t, ports.AuditEventLoginFailure, e.EventType)
 }
 
 func TestRegister_AuditEventLogged(t *testing.T) {
@@ -817,7 +821,7 @@ func TestRegister_AuditEventLogged(t *testing.T) {
 	require.NoError(t, err)
 
 	e := sink.next(t)
-	assert.Equal(t, auditRepo.EventRegister, e.EventType)
+	assert.Equal(t, ports.AuditEventRegister, e.EventType)
 	require.NotNil(t, e.UserID)
 	assert.Equal(t, "user-001", *e.UserID)
 }
@@ -848,7 +852,7 @@ func TestLogout_AuditEventLogged(t *testing.T) {
 	require.NoError(t, err)
 
 	e := sink.next(t)
-	assert.Equal(t, auditRepo.EventLogout, e.EventType)
+	assert.Equal(t, ports.AuditEventLogout, e.EventType)
 	require.NotNil(t, e.UserID, "userID resolved from Redis cache before session deletion")
 	assert.Equal(t, user.ID, *e.UserID)
 }
@@ -919,7 +923,7 @@ func TestRefreshToken_ConcurrentReplay_ReturnsUnauthenticated(t *testing.T) {
 	f.sRepo.On("GetByTokenHash", mock.Anything, hashedToken).Return(dbSession, nil)
 	// Simulates concurrent rotation: the token was already consumed by another request.
 	f.sRepo.On("RotateToken", mock.Anything, hashedToken, mock.AnythingOfType("*models.Session")).
-		Return(sessionRepo.ErrNotFound)
+		Return(ports.ErrSessionNotFound)
 
 	_, err := f.svc.RefreshToken(context.Background(), &api.RefreshTokenRequest{RefreshToken: plainToken})
 	require.Error(t, err)
@@ -981,9 +985,10 @@ func TestLogin_ExpiredRefreshTTL_NotCached(t *testing.T) {
 
 	uRepo := &mockUserRepo{}
 	sRepo := &mockSessionRepo{}
-	jwtMgr := jwtlib.New(testJWTSecret, 15*time.Minute)
+	jwtMgr := jwtlib.NewHS256Manager(testJWTSecret, 15*time.Minute)
+	cache := rediscache.New(rc)
 	// Negative TTL → sessions expire instantly → cacheSession must skip Set.
-	svc := auth.New(uRepo, sRepo, jwtMgr, rc, nil, nil, slog.Default(), -time.Hour)
+	svc := auth.New(uRepo, sRepo, jwtMgr, cache, nil, nil, hooks.NoOp{}, slog.Default(), -time.Hour)
 
 	user := fakeUser(t)
 	uRepo.On("GetByEmail", mock.Anything, user.Email).Return(user, nil)

@@ -5,6 +5,7 @@
 
 # artifacts
 bin/
+auth-service
 *.exe
 *.exe~
 *.dll
@@ -43,3 +44,6 @@ Thumbs.db
 
 # Git worktrees
 .worktrees/
+
+# internal planning artifacts
+docs/superpowers/

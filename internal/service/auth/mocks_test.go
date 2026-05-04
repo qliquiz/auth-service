@@ -6,95 +6,75 @@ import (
 	"time"
 
 	"auth-service/internal/domain/models"
-	auditRepo "auth-service/internal/repository/audit"
+	"auth-service/internal/domain/ports"
 
 	"github.com/stretchr/testify/mock"
 )
 
-// mockUserRepo is a testify mock for the userRepository interface.
-type mockUserRepo struct {
-	mock.Mock
-}
+type mockUserRepo struct{ mock.Mock }
 
 func (m *mockUserRepo) Create(ctx context.Context, email, passwordHash string) (*models.User, error) {
 	args := m.Called(ctx, email, passwordHash)
 	u, _ := args.Get(0).(*models.User)
 	return u, args.Error(1)
 }
-
 func (m *mockUserRepo) GetByEmail(ctx context.Context, email string) (*models.User, error) {
 	args := m.Called(ctx, email)
 	u, _ := args.Get(0).(*models.User)
 	return u, args.Error(1)
 }
-
 func (m *mockUserRepo) GetByID(ctx context.Context, id string) (*models.User, error) {
 	args := m.Called(ctx, id)
 	u, _ := args.Get(0).(*models.User)
 	return u, args.Error(1)
 }
 
-// mockSessionRepo is a testify mock for the sessionRepository interface.
-type mockSessionRepo struct {
-	mock.Mock
-}
+type mockSessionRepo struct{ mock.Mock }
 
 func (m *mockSessionRepo) Create(ctx context.Context, s *models.Session) error {
-	args := m.Called(ctx, s)
-	return args.Error(0)
+	return m.Called(ctx, s).Error(0)
 }
-
 func (m *mockSessionRepo) GetByTokenHash(ctx context.Context, tokenHash string) (*models.Session, error) {
 	args := m.Called(ctx, tokenHash)
 	s, _ := args.Get(0).(*models.Session)
 	return s, args.Error(1)
 }
-
 func (m *mockSessionRepo) DeleteByID(ctx context.Context, sessionID, userID string) (string, error) {
 	args := m.Called(ctx, sessionID, userID)
 	return args.String(0), args.Error(1)
 }
-
 func (m *mockSessionRepo) DeleteByTokenHash(ctx context.Context, tokenHash string) error {
-	args := m.Called(ctx, tokenHash)
-	return args.Error(0)
+	return m.Called(ctx, tokenHash).Error(0)
 }
-
 func (m *mockSessionRepo) RotateToken(ctx context.Context, oldHash string, newSession *models.Session) error {
-	args := m.Called(ctx, oldHash, newSession)
-	return args.Error(0)
+	return m.Called(ctx, oldHash, newSession).Error(0)
 }
-
 func (m *mockSessionRepo) DeleteAllByUserID(ctx context.Context, userID string) ([]string, error) {
 	args := m.Called(ctx, userID)
 	hashes, _ := args.Get(0).([]string)
 	return hashes, args.Error(1)
 }
-
 func (m *mockSessionRepo) ListByUserID(ctx context.Context, userID string) ([]*models.Session, error) {
 	args := m.Called(ctx, userID)
 	s, _ := args.Get(0).([]*models.Session)
 	return s, args.Error(1)
 }
 
-// auditSink is a lightweight, goroutine-safe audit repo that captures events
-// over a buffered channel. Use next() to retrieve the next event or fail fast.
+// auditSink captures events via a buffered channel. Implements ports.AuditStore.
 type auditSink struct {
-	events chan *auditRepo.Event
+	events chan *ports.AuditEvent
 }
 
 func newAuditSink() *auditSink {
-	return &auditSink{events: make(chan *auditRepo.Event, 10)}
+	return &auditSink{events: make(chan *ports.AuditEvent, 10)}
 }
 
-func (a *auditSink) Log(_ context.Context, e *auditRepo.Event) error {
+func (a *auditSink) Log(_ context.Context, e *ports.AuditEvent) error {
 	a.events <- e
 	return nil
 }
 
-// next blocks until an event arrives or the 500 ms deadline expires.
-// 500 ms is generous enough to survive heavy CI load without making tests slow.
-func (a *auditSink) next(t *testing.T) *auditRepo.Event {
+func (a *auditSink) next(t *testing.T) *ports.AuditEvent {
 	t.Helper()
 	select {
 	case e := <-a.events:

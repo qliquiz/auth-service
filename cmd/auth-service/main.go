@@ -51,7 +51,7 @@ func main() {
 
 	log.Info("infrastructure initialized successfully")
 
-	application := app.New(
+	application, err := app.New(
 		db,
 		redisClient,
 		log,
@@ -63,6 +63,10 @@ func main() {
 		cfg.Gateway,
 		cfg.Env,
 	)
+	if err != nil {
+		log.Error("failed to initialize application", "error", err)
+		os.Exit(1)
+	}
 
 	serverErr := make(chan error, 2)
 	go func() {

@@ -129,7 +129,8 @@ works identically for HTTP and gRPC (via metadata).
 
 Initial schema in `migrations/0001_init.up.sql`. Subsequent migrations:
 
-- `0004` — `users.created_at` / `updated_at` promoted to `TIMESTAMPTZ` (timezone-aware)
+- `0002` — `sessions` table
+- `0003` — `audit_events` table
 
 Current effective `users` schema:
 
@@ -164,3 +165,90 @@ DB rows — no stale-cache window.
 
 argon2id with params `m=65536, t=3, p=4`. Stored in PHC string format (`$argon2id$v=19$...`). See
 `internal/lib/password/password.go`.
+
+## Hexagonal Architecture
+
+All business logic in `internal/service/auth/` depends exclusively on interfaces from
+`internal/domain/ports/` — never on concrete types like `*pgxpool.Pool`, `*redis.Client`,
+or `*jwt.Manager`. This makes every backend swappable without touching the service layer.
+
+### internal/domain/ports/ — Domain interfaces
+
+| File         | Interfaces / Types                                               |
+|--------------|------------------------------------------------------------------|
+| `audit.go`   | `AuditStore`, `AuditEvent`, `AuditEventType` + 8 event constants |
+| `storage.go` | `UserStore`, `SessionStore` + 3 sentinel errors                  |
+| `cache.go`   | `SessionCache`, `CachedSession`                                  |
+| `token.go`   | `AccessTokenManager`, `Claims`                                   |
+| `hooks.go`   | `EventHook`, `HookEvent`                                         |
+
+### Concrete adapters
+
+| Adapter                 | Package                              | Implements           |
+|-------------------------|--------------------------------------|----------------------|
+| PostgreSQL user repo    | `internal/adapters/storage/postgres` | `ports.UserStore`    |
+| PostgreSQL session repo | `internal/adapters/storage/postgres` | `ports.SessionStore` |
+| PostgreSQL audit repo   | `internal/adapters/storage/postgres` | `ports.AuditStore`   |
+| Redis session cache     | `internal/adapters/cache/redis`      | `ports.SessionCache` |
+| In-memory user store    | `internal/adapters/storage/memory`   | `ports.UserStore`    |
+| In-memory session store | `internal/adapters/storage/memory`   | `ports.SessionStore` |
+| In-memory session cache | `internal/adapters/cache/memory`     | `ports.SessionCache` |
+
+### JWT signing strategies
+
+Three strategies are available, selected via `JWT_ALGORITHM`:
+
+| `JWT_ALGORITHM`   | Type             | Use case                                                     |
+|-------------------|------------------|--------------------------------------------------------------|
+| `hs256` (default) | Symmetric        | Single-service or shared-secret deployments                  |
+| `rs256`           | Asymmetric RSA   | Distributed: other services validate without the private key |
+| `es256`           | Asymmetric ECDSA | Same as RS256 but smaller tokens                             |
+
+For `rs256`/`es256`, set `JWT_PRIVATE_KEY_PATH` to a PEM-encoded private key file.
+Wiring is in `internal/app/app.go` — currently defaults to HS256; extend to read
+`jwtCfg.Algorithm` and load the key file for asymmetric strategies.
+
+### EventHook — extension point
+
+`AuthService` accepts an optional `ports.EventHook`. After every auth operation the service
+calls `hook.OnEvent(...)` in a background goroutine so hook logic never blocks the request path.
+Errors from hooks are logged but do not abort the operation.
+
+The default hook is `hooks.NoOp{}` (defined in `internal/adapters/hooks/noop.go`), which discards all events.
+To add custom business logic (e.g. send a welcome email on registration):
+
+```go
+type MyHook struct{ mailer Mailer }
+
+func (h *MyHook) OnEvent(ctx context.Context, e ports.HookEvent) error {
+    if e.Type == ports.AuditEventRegister {
+        return h.mailer.SendWelcome(ctx, e.UserEmail)
+    }
+    return nil
+}
+```
+
+Wire it in `internal/app/app.go` by replacing `hooks.NoOp{}` with your implementation.
+
+### In-memory adapters (testing & lightweight deploys)
+
+`internal/adapters/storage/memory` and `internal/adapters/cache/memory` provide fully in-memory
+implementations with no external dependencies. Use them in:
+
+- **Unit tests** that need real repository behavior without Docker
+- **Local dev** without PostgreSQL/Redis
+- **Edge / embedded** deployments where a full DB stack is not feasible
+
+```go
+svc := auth.New(
+    memory.NewUserStore(),
+    memory.NewSessionStore(),
+    jwtlib.NewHS256Manager(secret, 15*time.Minute),
+    memcache.New(),
+    nil, // audit disabled
+    nil,   // brute-force disabled
+    hooks.NoOp{},
+    logger,
+    24*time.Hour,
+)
+```

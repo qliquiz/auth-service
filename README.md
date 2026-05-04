@@ -51,6 +51,8 @@ GRPC_TIMEOUT=5s         # deadline for completing new connection handshakes
 JWT_SECRET=your-secret-min-32-chars
 JWT_ACCESS_TTL=15m
 JWT_REFRESH_TTL=720h    # 30 дней
+JWT_ALGORITHM=hs256     # hs256 (default), rs256, es256
+JWT_PRIVATE_KEY_PATH=   # path to PEM private key (required for rs256/es256)
 
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
@@ -177,7 +179,8 @@ gRPC :8082
 
 **Токены:**
 
-- **Access token** — JWT HS256, TTL 15 мин, stateless.
+- **Access token** — JWT, TTL 15 мин, stateless. Алгоритм подписи задаётся через `JWT_ALGORITHM`: `hs256` (HMAC, по
+  умолчанию), `rs256` (RSA), `es256` (ECDSA). Для `rs256`/`es256` укажите PEM-файл в `JWT_PRIVATE_KEY_PATH`.
 - **Refresh token** — случайная 32-байтовая строка, хранится как SHA-256 хэш в `sessions` и в Redis (`refresh:{hash}` →
   JSON). TTL совпадает с `expires_at` сессии.
 - **Ротация** — при RefreshToken старый токен атомарно удаляется и новый создаётся в одной DB-транзакции, предотвращая
