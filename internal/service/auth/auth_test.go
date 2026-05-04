@@ -9,15 +9,14 @@ import (
 
 	"auth-service/gen/api"
 	rediscache "auth-service/internal/adapters/cache/redis"
-	"auth-service/internal/domain/models"
-	"auth-service/internal/lib/bruteforce"
+	"auth-service/internal/adapters/hooks"
 	jwtlib "auth-service/internal/adapters/token/jwt"
+	"auth-service/internal/domain/models"
+	"auth-service/internal/domain/ports"
+	"auth-service/internal/lib/bruteforce"
 	"auth-service/internal/lib/password"
 	"auth-service/internal/lib/token"
-	
-	
 	"auth-service/internal/service/auth"
-	"auth-service/internal/domain/ports"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
@@ -59,7 +58,7 @@ func newFixture(t *testing.T) *fixture {
 	jwtMgr := jwtlib.NewHS256Manager(testJWTSecret, 15*time.Minute)
 	cache := rediscache.New(redisClient)
 
-	svc := auth.New(uRepo, sRepo, jwtMgr, cache, nil, nil, nil, slog.Default(), testRefreshTTL)
+	svc := auth.New(uRepo, sRepo, jwtMgr, cache, nil, nil, hooks.NoOp{}, slog.Default(), testRefreshTTL)
 
 	return &fixture{
 		svc:     svc,
@@ -633,7 +632,7 @@ func newFixtureWithGuard(t *testing.T, maxAttempts int) *fixture {
 	guard := bruteforce.New(redisClient, maxAttempts, time.Minute, 15*time.Minute)
 	cache := rediscache.New(redisClient)
 
-	svc := auth.New(uRepo, sRepo, jwtMgr, cache, nil, guard, nil, slog.Default(), testRefreshTTL)
+	svc := auth.New(uRepo, sRepo, jwtMgr, cache, nil, guard, hooks.NoOp{}, slog.Default(), testRefreshTTL)
 
 	return &fixture{
 		svc:     svc,
@@ -760,7 +759,7 @@ func newFixtureWithAudit(t *testing.T) (*fixture, *auditSink) {
 	sink := newAuditSink()
 	cache := rediscache.New(redisClient)
 
-	svc := auth.New(uRepo, sRepo, jwtMgr, cache, sink, nil, nil, slog.Default(), testRefreshTTL)
+	svc := auth.New(uRepo, sRepo, jwtMgr, cache, sink, nil, hooks.NoOp{}, slog.Default(), testRefreshTTL)
 
 	return &fixture{
 		svc:     svc,
@@ -989,7 +988,7 @@ func TestLogin_ExpiredRefreshTTL_NotCached(t *testing.T) {
 	jwtMgr := jwtlib.NewHS256Manager(testJWTSecret, 15*time.Minute)
 	cache := rediscache.New(rc)
 	// Negative TTL → sessions expire instantly → cacheSession must skip Set.
-	svc := auth.New(uRepo, sRepo, jwtMgr, cache, nil, nil, nil, slog.Default(), -time.Hour)
+	svc := auth.New(uRepo, sRepo, jwtMgr, cache, nil, nil, hooks.NoOp{}, slog.Default(), -time.Hour)
 
 	user := fakeUser(t)
 	uRepo.On("GetByEmail", mock.Anything, user.Email).Return(user, nil)

@@ -17,11 +17,11 @@ import (
 
 	"auth-service/gen/api"
 	"auth-service/internal/domain/models"
+	"auth-service/internal/domain/ports"
 	"auth-service/internal/lib/bruteforce"
 	"auth-service/internal/lib/password"
 	"auth-service/internal/lib/token"
 	"auth-service/internal/lib/validate"
-	"auth-service/internal/domain/ports"
 )
 
 // AuthService implements api.AuthServiceServer. All dependencies are injected
@@ -577,9 +577,6 @@ func (s *AuthService) logAudit(userID *string, eventType ports.AuditEventType, i
 
 // fireHook dispatches an auth lifecycle event to the configured hook asynchronously.
 func (s *AuthService) fireHook(userID, email string, eventType ports.AuditEventType, ip, ua string, meta map[string]string) {
-	if s.hook == nil {
-		return
-	}
 	go func() {
 		ctx2, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
