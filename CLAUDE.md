@@ -183,15 +183,15 @@ or `*jwt.Manager`. This makes every backend swappable without touching the servi
 
 ### Concrete adapters
 
-| Adapter                 | Package                                      | Implements           |
-|-------------------------|----------------------------------------------|----------------------|
-| PostgreSQL user repo    | `internal/adapters/storage/postgres`         | `ports.UserStore`    |
-| PostgreSQL session repo | `internal/adapters/storage/postgres`         | `ports.SessionStore` |
-| PostgreSQL audit repo   | `internal/adapters/storage/postgres`         | `ports.AuditStore`   |
-| Redis session cache     | `internal/adapters/cache/redis`              | `ports.SessionCache` |
-| In-memory user store    | `internal/adapters/storage/memory`           | `ports.UserStore`    |
-| In-memory session store | `internal/adapters/storage/memory`           | `ports.SessionStore` |
-| In-memory session cache | `internal/adapters/cache/memory`             | `ports.SessionCache` |
+| Adapter                 | Package                              | Implements           |
+|-------------------------|--------------------------------------|----------------------|
+| PostgreSQL user repo    | `internal/adapters/storage/postgres` | `ports.UserStore`    |
+| PostgreSQL session repo | `internal/adapters/storage/postgres` | `ports.SessionStore` |
+| PostgreSQL audit repo   | `internal/adapters/storage/postgres` | `ports.AuditStore`   |
+| Redis session cache     | `internal/adapters/cache/redis`      | `ports.SessionCache` |
+| In-memory user store    | `internal/adapters/storage/memory`   | `ports.UserStore`    |
+| In-memory session store | `internal/adapters/storage/memory`   | `ports.SessionStore` |
+| In-memory session cache | `internal/adapters/cache/memory`     | `ports.SessionCache` |
 
 ### JWT signing strategies
 
@@ -220,10 +220,10 @@ To add custom business logic (e.g. send a welcome email on registration):
 type MyHook struct{ mailer Mailer }
 
 func (h *MyHook) OnEvent(ctx context.Context, e ports.HookEvent) error {
-if e.Type == ports.AuditEventRegister {
-return h.mailer.SendWelcome(ctx, e.UserEmail)
-}
-return nil
+    if e.Type == ports.AuditEventRegister {
+        return h.mailer.SendWelcome(ctx, e.UserEmail)
+    }
+    return nil
 }
 ```
 
@@ -240,14 +240,14 @@ implementations with no external dependencies. Use them in:
 
 ```go
 svc := auth.New(
-memory.NewUserStore(),
-memory.NewSessionStore(),
-jwtlib.NewHS256Manager(secret, 15*time.Minute),
-memcache.New(),
-nil, // audit disabled
-nil,   // brute-force disabled
-hooks.NoOp{},
-logger,
-24*time.Hour,
+    memory.NewUserStore(),
+    memory.NewSessionStore(),
+    jwtlib.NewHS256Manager(secret, 15*time.Minute),
+    memcache.New(),
+    nil, // audit disabled
+    nil,   // brute-force disabled
+    hooks.NoOp{},
+    logger,
+    24*time.Hour,
 )
 ```
