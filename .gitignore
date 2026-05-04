@@ -5,6 +5,7 @@
 
 # artifacts
 bin/
+auth-service
 *.exe
 *.exe~
 *.dll
@@ -40,3 +41,6 @@ Thumbs.db
 
 # agents
 .claude/
+
+# internal planning artifacts
+docs/superpowers/

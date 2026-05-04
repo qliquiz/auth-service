@@ -1,7 +1,6 @@
-package user
+package postgres
 
 import (
-	"auth-service/internal/domain/models"
 	"context"
 	"errors"
 	"fmt"
@@ -9,18 +8,18 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"auth-service/internal/domain/models"
+	"auth-service/internal/domain/ports"
 )
 
-var (
-	ErrNotFound      = errors.New("user not found")
-	ErrAlreadyExists = errors.New("user already exists")
-)
+var _ ports.UserStore = (*UserRepository)(nil)
 
 type UserRepository struct {
 	db *pgxpool.Pool
 }
 
-func New(db *pgxpool.Pool) *UserRepository {
+func NewUserRepository(db *pgxpool.Pool) *UserRepository {
 	return &UserRepository{db: db}
 }
 
@@ -31,11 +30,13 @@ func (r *UserRepository) Create(ctx context.Context, email, passwordHash string)
 		RETURNING id, email, password_hash, created_at, updated_at`
 
 	var u models.User
-	err := r.db.QueryRow(ctx, q, email, passwordHash).
-		Scan(&u.ID, &u.Email, &u.PasswordHash, &u.CreatedAt, &u.UpdatedAt)
+	err := r.db.QueryRow(ctx, q, email, passwordHash).Scan(
+		&u.ID, &u.Email, &u.PasswordHash, &u.CreatedAt, &u.UpdatedAt,
+	)
 	if err != nil {
-		if isUniqueViolation(err) {
-			return nil, ErrAlreadyExists
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil, ports.ErrUserAlreadyExists
 		}
 		return nil, fmt.Errorf("create user: %w", err)
 	}
@@ -43,17 +44,14 @@ func (r *UserRepository) Create(ctx context.Context, email, passwordHash string)
 }
 
 func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.User, error) {
-	const q = `
-		SELECT id, email, password_hash, created_at, updated_at
-		FROM users
-		WHERE email = $1`
-
+	const q = `SELECT id, email, password_hash, created_at, updated_at FROM users WHERE email = $1`
 	var u models.User
-	err := r.db.QueryRow(ctx, q, email).
-		Scan(&u.ID, &u.Email, &u.PasswordHash, &u.CreatedAt, &u.UpdatedAt)
+	err := r.db.QueryRow(ctx, q, email).Scan(
+		&u.ID, &u.Email, &u.PasswordHash, &u.CreatedAt, &u.UpdatedAt,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
+			return nil, ports.ErrUserNotFound
 		}
 		return nil, fmt.Errorf("get user by email: %w", err)
 	}
@@ -61,24 +59,16 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.
 }
 
 func (r *UserRepository) GetByID(ctx context.Context, id string) (*models.User, error) {
-	const q = `
-		SELECT id, email, password_hash, created_at, updated_at
-		FROM users
-		WHERE id = $1`
-
+	const q = `SELECT id, email, password_hash, created_at, updated_at FROM users WHERE id = $1`
 	var u models.User
-	err := r.db.QueryRow(ctx, q, id).
-		Scan(&u.ID, &u.Email, &u.PasswordHash, &u.CreatedAt, &u.UpdatedAt)
+	err := r.db.QueryRow(ctx, q, id).Scan(
+		&u.ID, &u.Email, &u.PasswordHash, &u.CreatedAt, &u.UpdatedAt,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
+			return nil, ports.ErrUserNotFound
 		}
 		return nil, fmt.Errorf("get user by id: %w", err)
 	}
 	return &u, nil
-}
-
-func isUniqueViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }

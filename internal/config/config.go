@@ -37,6 +37,10 @@ type JWTConfig struct {
 	Secret     string        `yaml:"secret" env:"JWT_SECRET" env-required:"true"`
 	AccessTTL  time.Duration `yaml:"access_ttl" env:"JWT_ACCESS_TTL" env-default:"15m"`
 	RefreshTTL time.Duration `yaml:"refresh_ttl" env:"JWT_REFRESH_TTL" env-default:"720h"`
+	// Algorithm selects the signing algorithm: hs256 (default), rs256, es256.
+	// For rs256/es256, JWT_PRIVATE_KEY_PATH must point to a PEM-encoded private key.
+	Algorithm      string `yaml:"algorithm" env:"JWT_ALGORITHM" env-default:"hs256"`
+	PrivateKeyPath string `yaml:"private_key_path" env:"JWT_PRIVATE_KEY_PATH" env-default:""`
 }
 
 // SecurityConfig groups brute-force and rate-limit tunables.
