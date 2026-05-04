@@ -132,7 +132,9 @@ func writePEM(t *testing.T, keyType string, der []byte) string {
 	path := filepath.Join(t.TempDir(), "key.pem")
 	f, err := os.Create(path)
 	require.NoError(t, err)
-	defer f.Close()
+	defer func(f *os.File) {
+		_ = f.Close()
+	}(f)
 	require.NoError(t, pem.Encode(f, &pem.Block{Type: keyType, Bytes: der}))
 	return path
 }
