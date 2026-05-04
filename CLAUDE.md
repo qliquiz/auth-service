@@ -165,36 +165,33 @@ DB rows — no stale-cache window.
 argon2id with params `m=65536, t=3, p=4`. Stored in PHC string format (`$argon2id$v=19$...`). See
 `internal/lib/password/password.go`.
 
-## Universal Ports Architecture
+## Hexagonal Architecture
 
-This service uses a **Ports & Adapters** pattern (Hexagonal Architecture). All business logic in
-`internal/service/auth/` depends exclusively on interfaces from `pkg/ports/` — never on concrete
-types like `*pgxpool.Pool`, `*redis.Client`, or `*jwt.Manager`. This makes every backend
-swappable without touching the service layer.
+All business logic in `internal/service/auth/` depends exclusively on interfaces from
+`internal/domain/ports/` — never on concrete types like `*pgxpool.Pool`, `*redis.Client`,
+or `*jwt.Manager`. This makes every backend swappable without touching the service layer.
 
-### pkg/ports/ — Public interfaces
+### internal/domain/ports/ — Domain interfaces
 
 | File         | Interfaces / Types                                               |
 |--------------|------------------------------------------------------------------|
 | `audit.go`   | `AuditStore`, `AuditEvent`, `AuditEventType` + 8 event constants |
-| `storage.go` | `UserStore`, `SessionStore`                                      |
+| `storage.go` | `UserStore`, `SessionStore` + 3 sentinel errors                  |
 | `cache.go`   | `SessionCache`, `CachedSession`                                  |
 | `token.go`   | `AccessTokenManager`, `Claims`                                   |
 | `hooks.go`   | `EventHook`, `HookEvent`                                         |
 
-All types in `pkg/ports/` are safe to import from external modules.
-
 ### Concrete adapters
 
-| Adapter                 | Package                       | Implements           |
-|-------------------------|-------------------------------|----------------------|
-| PostgreSQL user repo    | `internal/repository/user`    | `ports.UserStore`    |
-| PostgreSQL session repo | `internal/repository/session` | `ports.SessionStore` |
-| PostgreSQL audit repo   | `internal/repository/audit`   | `ports.AuditStore`   |
-| Redis session cache     | `internal/cache/redis`        | `ports.SessionCache` |
-| In-memory user store    | `pkg/storage/memory`          | `ports.UserStore`    |
-| In-memory session store | `pkg/storage/memory`          | `ports.SessionStore` |
-| In-memory session cache | `pkg/cache/memory`            | `ports.SessionCache` |
+| Adapter                 | Package                                      | Implements           |
+|-------------------------|----------------------------------------------|----------------------|
+| PostgreSQL user repo    | `internal/adapters/storage/postgres`         | `ports.UserStore`    |
+| PostgreSQL session repo | `internal/adapters/storage/postgres`         | `ports.SessionStore` |
+| PostgreSQL audit repo   | `internal/adapters/storage/postgres`         | `ports.AuditStore`   |
+| Redis session cache     | `internal/adapters/cache/redis`              | `ports.SessionCache` |
+| In-memory user store    | `internal/adapters/storage/memory`           | `ports.UserStore`    |
+| In-memory session store | `internal/adapters/storage/memory`           | `ports.SessionStore` |
+| In-memory session cache | `internal/adapters/cache/memory`             | `ports.SessionCache` |
 
 ### JWT signing strategies
 
@@ -216,17 +213,17 @@ Wiring is in `internal/app/app.go` — currently defaults to HS256; extend to re
 calls `hook.OnEvent(...)` in a background goroutine so hook logic never blocks the request path.
 Errors from hooks are logged but do not abort the operation.
 
-The default hook is `hooks.NoOp{}` (defined in `pkg/hooks/noop.go`), which discards all events.
+The default hook is `hooks.NoOp{}` (defined in `internal/adapters/hooks/noop.go`), which discards all events.
 To add custom business logic (e.g. send a welcome email on registration):
 
 ```go
 type MyHook struct{ mailer Mailer }
 
 func (h *MyHook) OnEvent(ctx context.Context, e ports.HookEvent) error {
-    if e.Type == ports.AuditEventRegister {
-        return h.mailer.SendWelcome(ctx, e.UserEmail)
-    }
-    return nil
+if e.Type == ports.AuditEventRegister {
+return h.mailer.SendWelcome(ctx, e.UserEmail)
+}
+return nil
 }
 ```
 
@@ -234,8 +231,8 @@ Wire it in `internal/app/app.go` by replacing `hooks.NoOp{}` with your implement
 
 ### In-memory adapters (testing & lightweight deploys)
 
-`pkg/storage/memory` and `pkg/cache/memory` provide fully in-memory implementations with no
-external dependencies. Use them in:
+`internal/adapters/storage/memory` and `internal/adapters/cache/memory` provide fully in-memory
+implementations with no external dependencies. Use them in:
 
 - **Unit tests** that need real repository behavior without Docker
 - **Local dev** without PostgreSQL/Redis
@@ -243,14 +240,14 @@ external dependencies. Use them in:
 
 ```go
 svc := auth.New(
-    memory.NewUserStore(),
-    memory.NewSessionStore(),
-    jwtlib.NewHS256Manager(secret, 15*time.Minute),
-    memcache.New(),
-    nil,   // audit disabled
-    nil,   // brute-force disabled
-    hooks.NoOp{},
-    logger,
-    24*time.Hour,
+memory.NewUserStore(),
+memory.NewSessionStore(),
+jwtlib.NewHS256Manager(secret, 15*time.Minute),
+memcache.New(),
+nil, // audit disabled
+nil,   // brute-force disabled
+hooks.NoOp{},
+logger,
+24*time.Hour,
 )
 ```

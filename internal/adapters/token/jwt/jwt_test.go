@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	jwtlib "auth-service/internal/lib/jwt"
+	jwtlib "auth-service/internal/adapters/token/jwt"
 
 	jwtpkg "github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"

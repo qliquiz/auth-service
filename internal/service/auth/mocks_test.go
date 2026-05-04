@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"auth-service/internal/domain/models"
-	"auth-service/pkg/ports"
+	"auth-service/internal/domain/ports"
 
 	"github.com/stretchr/testify/mock"
 )

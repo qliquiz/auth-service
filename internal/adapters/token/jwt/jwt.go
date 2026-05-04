@@ -1,5 +1,3 @@
-// Package jwt provides access-token strategies: HS256 (shared secret),
-// RS256 and ES256 (asymmetric). All managers implement ports.AccessTokenManager.
 package jwt
 
 import (
@@ -10,11 +8,9 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
-	"auth-service/pkg/ports"
+	"auth-service/internal/domain/ports"
 )
 
-// jwtClaims is the internal representation used for signing/parsing.
-// We mirror ports.Claims but add jwt.RegisteredClaims for library compatibility.
 type jwtClaims struct {
 	UserID string   `json:"uid"`
 	Email  string   `json:"email"`
@@ -23,29 +19,21 @@ type jwtClaims struct {
 }
 
 func (c *jwtClaims) toPorts() *ports.Claims {
-	return &ports.Claims{
-		UserID: c.UserID,
-		Email:  c.Email,
-		Roles:  c.Roles,
-	}
+	return &ports.Claims{UserID: c.UserID, Email: c.Email, Roles: c.Roles}
 }
 
 // ── HS256 ─────────────────────────────────────────────────────────────────────
 
-// HS256Manager signs tokens with a shared HMAC-SHA256 secret.
-// Suitable for single-service deployments or when all validators share the secret.
 type HS256Manager struct {
 	secret    []byte
 	accessTTL time.Duration
 }
 
-// NewHS256Manager creates an HS256 token manager.
 func NewHS256Manager(secret string, accessTTL time.Duration) *HS256Manager {
 	return &HS256Manager{secret: []byte(secret), accessTTL: accessTTL}
 }
 
 // New is a backward-compatible alias for NewHS256Manager.
-// Deprecated: prefer NewHS256Manager for clarity.
 func New(secret string, accessTTL time.Duration) *HS256Manager {
 	return NewHS256Manager(secret, accessTTL)
 }
@@ -65,15 +53,11 @@ func (m *HS256Manager) ValidateAccessToken(tokenStr string) (*ports.Claims, erro
 
 // ── RS256 ─────────────────────────────────────────────────────────────────────
 
-// RS256Manager signs tokens with an RSA private key and validates with the
-// corresponding public key. Use this when other services need to validate
-// tokens without access to the private key.
 type RS256Manager struct {
 	priv      *rsa.PrivateKey
 	accessTTL time.Duration
 }
 
-// NewRS256Manager creates an RS256 token manager.
 func NewRS256Manager(priv *rsa.PrivateKey, accessTTL time.Duration) *RS256Manager {
 	return &RS256Manager{priv: priv, accessTTL: accessTTL}
 }
@@ -93,14 +77,11 @@ func (m *RS256Manager) ValidateAccessToken(tokenStr string) (*ports.Claims, erro
 
 // ── ES256 ─────────────────────────────────────────────────────────────────────
 
-// ES256Manager signs tokens with an ECDSA P-256 private key. Produces smaller
-// tokens than RS256 with equivalent security for most use cases.
 type ES256Manager struct {
 	priv      *ecdsa.PrivateKey
 	accessTTL time.Duration
 }
 
-// NewES256Manager creates an ES256 token manager.
 func NewES256Manager(priv *ecdsa.PrivateKey, accessTTL time.Duration) *ES256Manager {
 	return &ES256Manager{priv: priv, accessTTL: accessTTL}
 }
@@ -118,7 +99,7 @@ func (m *ES256Manager) ValidateAccessToken(tokenStr string) (*ports.Claims, erro
 	})
 }
 
-// ── Shared helpers ────────────────────────────────────────────────────────────
+// ── helpers ───────────────────────────────────────────────────────────────────
 
 func signToken(method jwt.SigningMethod, key any, userID, email string, roles []string, ttl time.Duration) (string, error) {
 	claims := &jwtClaims{
@@ -155,7 +136,6 @@ func parseToken(tokenStr string, keyFunc jwt.Keyfunc) (*ports.Claims, error) {
 	return claims.toPorts(), nil
 }
 
-// Compile-time assertions: all three managers must implement AccessTokenManager.
 var (
 	_ ports.AccessTokenManager = (*HS256Manager)(nil)
 	_ ports.AccessTokenManager = (*RS256Manager)(nil)

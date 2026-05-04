@@ -1,4 +1,4 @@
-package session
+package postgres
 
 import (
 	"context"
@@ -9,20 +9,18 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"auth-service/internal/domain/models"
-	"auth-service/pkg/ports"
+	"auth-service/internal/domain/ports"
 )
 
-var ErrNotFound = errors.New("session not found")
+var _ ports.SessionStore = (*SessionRepository)(nil)
 
 type SessionRepository struct {
 	db *pgxpool.Pool
 }
 
-func New(db *pgxpool.Pool) *SessionRepository {
+func NewSessionRepository(db *pgxpool.Pool) *SessionRepository {
 	return &SessionRepository{db: db}
 }
-
-var _ ports.SessionStore = (*SessionRepository)(nil)
 
 func (r *SessionRepository) Create(ctx context.Context, s *models.Session) error {
 	const q = `
@@ -50,7 +48,7 @@ func (r *SessionRepository) GetByTokenHash(ctx context.Context, tokenHash string
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
+			return nil, ports.ErrSessionNotFound
 		}
 		return nil, fmt.Errorf("get session by token hash: %w", err)
 	}
@@ -63,7 +61,7 @@ func (r *SessionRepository) DeleteByID(ctx context.Context, sessionID, userID st
 	err := r.db.QueryRow(ctx, q, sessionID, userID).Scan(&tokenHash)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", ErrNotFound
+			return "", ports.ErrSessionNotFound
 		}
 		return "", fmt.Errorf("delete session: %w", err)
 	}
@@ -79,23 +77,21 @@ func (r *SessionRepository) DeleteByTokenHash(ctx context.Context, tokenHash str
 	return nil
 }
 
-// RotateToken atomically replaces oldHash with newSession in a single transaction.
-// Returns ErrNotFound if oldHash no longer exists (concurrent rotation or replay).
+// RotateToken atomically replaces oldHash with newSession.
+// Returns ErrSessionNotFound if oldHash is absent (concurrent replay).
 func (r *SessionRepository) RotateToken(ctx context.Context, oldHash string, newSession *models.Session) error {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer func(tx pgx.Tx, ctx context.Context) {
-		_ = tx.Rollback(ctx)
-	}(tx, ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	tag, err := tx.Exec(ctx, `DELETE FROM sessions WHERE token_hash = $1`, oldHash)
 	if err != nil {
 		return fmt.Errorf("delete old session: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
-		return ErrNotFound
+		return ports.ErrSessionNotFound
 	}
 
 	const insertQ = `

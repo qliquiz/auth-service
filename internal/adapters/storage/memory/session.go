@@ -8,23 +8,18 @@ import (
 	"github.com/google/uuid"
 
 	"auth-service/internal/domain/models"
-	sessionRepo "auth-service/internal/repository/session"
-	"auth-service/pkg/ports"
+	"auth-service/internal/domain/ports"
 )
 
-// Compile-time assertion: SessionStore must implement ports.SessionStore.
 var _ ports.SessionStore = (*SessionStore)(nil)
 
-// SessionStore is a thread-safe, in-memory implementation of ports.SessionStore.
-// sync.Mutex (not RWMutex) is used because GetByTokenHash mutates LastUsedAt,
-// so all methods require an exclusive lock.
+// SessionStore uses sync.Mutex (not RWMutex) because GetByTokenHash mutates LastUsedAt.
 type SessionStore struct {
 	mu     sync.Mutex
 	byID   map[string]*models.Session
-	byHash map[string]*models.Session // tokenHash → Session
+	byHash map[string]*models.Session
 }
 
-// NewSessionStore creates an empty SessionStore.
 func NewSessionStore() *SessionStore {
 	return &SessionStore{
 		byID:   make(map[string]*models.Session),
@@ -52,7 +47,7 @@ func (s *SessionStore) GetByTokenHash(_ context.Context, tokenHash string) (*mod
 	defer s.mu.Unlock()
 	sess, ok := s.byHash[tokenHash]
 	if !ok {
-		return nil, sessionRepo.ErrNotFound
+		return nil, ports.ErrSessionNotFound
 	}
 	sess.LastUsedAt = time.Now()
 	cp := *sess
@@ -64,7 +59,7 @@ func (s *SessionStore) DeleteByID(_ context.Context, sessionID, userID string) (
 	defer s.mu.Unlock()
 	sess, ok := s.byID[sessionID]
 	if !ok || sess.UserID != userID {
-		return "", sessionRepo.ErrNotFound
+		return "", ports.ErrSessionNotFound
 	}
 	hash := sess.TokenHash
 	delete(s.byID, sessionID)
@@ -82,15 +77,13 @@ func (s *SessionStore) DeleteByTokenHash(_ context.Context, tokenHash string) er
 	return nil
 }
 
-// RotateToken atomically replaces the session identified by oldHash with
-// newSess. Returns sessionRepo.ErrNotFound if oldHash is absent — the caller
-// treats this as a concurrent replay attempt.
+// RotateToken returns ErrSessionNotFound if oldHash is absent (concurrent replay).
 func (s *SessionStore) RotateToken(_ context.Context, oldHash string, newSess *models.Session) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	old, ok := s.byHash[oldHash]
 	if !ok {
-		return sessionRepo.ErrNotFound
+		return ports.ErrSessionNotFound
 	}
 	delete(s.byID, old.ID)
 	delete(s.byHash, oldHash)

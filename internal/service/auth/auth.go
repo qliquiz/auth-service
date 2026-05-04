@@ -21,13 +21,11 @@ import (
 	"auth-service/internal/lib/password"
 	"auth-service/internal/lib/token"
 	"auth-service/internal/lib/validate"
-	sessionRepo "auth-service/internal/repository/session"
-	userRepo "auth-service/internal/repository/user"
-	"auth-service/pkg/ports"
+	"auth-service/internal/domain/ports"
 )
 
 // AuthService implements api.AuthServiceServer. All dependencies are injected
-// via pkg/ports interfaces so the underlying backends are swappable.
+// via internal/domain/ports interfaces so the underlying backends are swappable.
 type AuthService struct {
 	api.UnimplementedAuthServiceServer
 	userStore    ports.UserStore
@@ -92,7 +90,7 @@ func (s *AuthService) Register(ctx context.Context, req *api.RegisterRequest) (*
 
 	user, err := s.userStore.Create(ctx, req.Email, hash)
 	if err != nil {
-		if errors.Is(err, userRepo.ErrAlreadyExists) {
+		if errors.Is(err, ports.ErrUserAlreadyExists) {
 			return nil, status.Error(codes.AlreadyExists, "email already registered")
 		}
 		log.Error("create user", slog.String("err", err.Error()))
@@ -140,7 +138,7 @@ func (s *AuthService) Login(ctx context.Context, req *api.LoginRequest) (*api.Lo
 
 	user, err := s.userStore.GetByEmail(ctx, req.Email)
 	if err != nil {
-		if errors.Is(err, userRepo.ErrNotFound) {
+		if errors.Is(err, ports.ErrUserNotFound) {
 			s.logAudit(nil, ports.AuditEventLoginFailure, ipAddr, userAgent,
 				map[string]string{"email": req.Email})
 			s.fireHook("", req.Email, ports.AuditEventLoginFailure, ipAddr, userAgent,
@@ -261,7 +259,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *api.RefreshTokenReq
 		// Cache miss — fall back to DB (also handles Redis unavailability).
 		dbSess, dbErr := s.sessionStore.GetByTokenHash(ctx, tokenHash)
 		if dbErr != nil {
-			if errors.Is(dbErr, sessionRepo.ErrNotFound) {
+			if errors.Is(dbErr, ports.ErrSessionNotFound) {
 				return nil, status.Error(codes.Unauthenticated, "invalid refresh token")
 			}
 			log.Error("get session from db", slog.String("err", dbErr.Error()))
@@ -316,7 +314,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *api.RefreshTokenReq
 	// RotateToken uses a DB transaction and verifies the old token was actually
 	// deleted (RowsAffected == 1), preventing concurrent refresh-token replay.
 	if err = s.sessionStore.RotateToken(ctx, tokenHash, newSess); err != nil {
-		if errors.Is(err, sessionRepo.ErrNotFound) {
+		if errors.Is(err, ports.ErrSessionNotFound) {
 			// Another concurrent request already consumed this token.
 			return nil, status.Error(codes.Unauthenticated, "invalid refresh token")
 		}
@@ -454,7 +452,7 @@ func (s *AuthService) RevokeSession(ctx context.Context, req *api.RevokeSessionR
 
 	tokenHash, err := s.sessionStore.DeleteByID(ctx, req.SessionId, userID)
 	if err != nil {
-		if errors.Is(err, sessionRepo.ErrNotFound) {
+		if errors.Is(err, ports.ErrSessionNotFound) {
 			return nil, status.Error(codes.NotFound, "session not found")
 		}
 		log.Error("delete session", slog.String("err", err.Error()))

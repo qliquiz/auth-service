@@ -8,16 +8,16 @@ import (
 	"time"
 
 	"auth-service/gen/api"
-	rediscache "auth-service/internal/cache/redis"
+	rediscache "auth-service/internal/adapters/cache/redis"
 	"auth-service/internal/domain/models"
 	"auth-service/internal/lib/bruteforce"
-	jwtlib "auth-service/internal/lib/jwt"
+	jwtlib "auth-service/internal/adapters/token/jwt"
 	"auth-service/internal/lib/password"
 	"auth-service/internal/lib/token"
-	sessionRepo "auth-service/internal/repository/session"
-	userRepo "auth-service/internal/repository/user"
+	
+	
 	"auth-service/internal/service/auth"
-	"auth-service/pkg/ports"
+	"auth-service/internal/domain/ports"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
@@ -151,7 +151,7 @@ func TestRegister_EmailAlreadyExists(t *testing.T) {
 	f := newFixture(t)
 
 	f.uRepo.On("Create", mock.Anything, "alice@example.com", mock.AnythingOfType("string")).
-		Return((*models.User)(nil), userRepo.ErrAlreadyExists)
+		Return((*models.User)(nil), ports.ErrUserAlreadyExists)
 
 	_, err := f.svc.Register(context.Background(), &api.RegisterRequest{
 		Email:    "alice@example.com",
@@ -195,7 +195,7 @@ func TestLogin_UserNotFound(t *testing.T) {
 	f := newFixture(t)
 
 	f.uRepo.On("GetByEmail", mock.Anything, "ghost@example.com").
-		Return((*models.User)(nil), userRepo.ErrNotFound)
+		Return((*models.User)(nil), ports.ErrUserNotFound)
 
 	_, err := f.svc.Login(context.Background(), &api.LoginRequest{
 		Email:    "ghost@example.com",
@@ -368,7 +368,7 @@ func TestRefreshToken_TokenNotFound(t *testing.T) {
 	plainToken, _, _ := token.Generate()
 
 	f.sRepo.On("GetByTokenHash", mock.Anything, mock.AnythingOfType("string")).
-		Return((*models.Session)(nil), sessionRepo.ErrNotFound)
+		Return((*models.Session)(nil), ports.ErrSessionNotFound)
 
 	_, err := f.svc.RefreshToken(context.Background(), &api.RefreshTokenRequest{
 		RefreshToken: plainToken,
@@ -591,7 +591,7 @@ func TestRevokeSession_NotFound(t *testing.T) {
 
 	ctx := f.ctxWithBearerToken(t, "user-001", "alice@example.com")
 	f.sRepo.On("DeleteByID", mock.Anything, "nonexistent", "user-001").
-		Return("", sessionRepo.ErrNotFound)
+		Return("", ports.ErrSessionNotFound)
 
 	_, err := f.svc.RevokeSession(ctx, &api.RevokeSessionRequest{SessionId: "nonexistent"})
 	require.Error(t, err)
@@ -606,7 +606,7 @@ func TestRevokeSession_CannotRevokeOtherUsersSession(t *testing.T) {
 	// The repo enforces ownership via WHERE user_id = $2 — returns ErrNotFound.
 	ctx := f.ctxWithBearerToken(t, "user-002", "bob@example.com")
 	f.sRepo.On("DeleteByID", mock.Anything, "sess-of-user-001", "user-002").
-		Return("", sessionRepo.ErrNotFound)
+		Return("", ports.ErrSessionNotFound)
 
 	_, err := f.svc.RevokeSession(ctx, &api.RevokeSessionRequest{SessionId: "sess-of-user-001"})
 	require.Error(t, err)
@@ -924,7 +924,7 @@ func TestRefreshToken_ConcurrentReplay_ReturnsUnauthenticated(t *testing.T) {
 	f.sRepo.On("GetByTokenHash", mock.Anything, hashedToken).Return(dbSession, nil)
 	// Simulates concurrent rotation: the token was already consumed by another request.
 	f.sRepo.On("RotateToken", mock.Anything, hashedToken, mock.AnythingOfType("*models.Session")).
-		Return(sessionRepo.ErrNotFound)
+		Return(ports.ErrSessionNotFound)
 
 	_, err := f.svc.RefreshToken(context.Background(), &api.RefreshTokenRequest{RefreshToken: plainToken})
 	require.Error(t, err)

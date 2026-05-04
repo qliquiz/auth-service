@@ -1,6 +1,3 @@
-// Package memory provides an in-memory implementation of ports.SessionCache.
-// Entries are automatically expired upon access after their TTL.
-// Use in tests and single-node deployments that do not need Redis.
 package memory
 
 import (
@@ -9,10 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"auth-service/pkg/ports"
+	"auth-service/internal/domain/ports"
 )
 
-// Compile-time assertion: Cache must implement ports.SessionCache.
 var _ ports.SessionCache = (*Cache)(nil)
 
 type entry struct {
@@ -20,13 +16,11 @@ type entry struct {
 	expiresAt time.Time
 }
 
-// Cache is a thread-safe, TTL-aware in-memory session cache.
 type Cache struct {
 	mu    sync.Mutex
 	items map[string]entry
 }
 
-// New creates an empty Cache.
 func New() *Cache {
 	return &Cache{items: make(map[string]entry)}
 }

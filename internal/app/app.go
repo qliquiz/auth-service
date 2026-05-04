@@ -3,19 +3,17 @@ package app
 import (
 	"auth-service/internal/app/gateway"
 	grpcApp "auth-service/internal/app/grpc"
-	rediscache "auth-service/internal/cache/redis"
+	rediscache "auth-service/internal/adapters/cache/redis"
+	"auth-service/internal/adapters/hooks"
+	pgstore "auth-service/internal/adapters/storage/postgres"
+	jwtlib "auth-service/internal/adapters/token/jwt"
 	"auth-service/internal/config"
+	"auth-service/internal/domain/ports"
 	"auth-service/internal/interceptor"
 	"auth-service/internal/lib/bruteforce"
-	jwtlib "auth-service/internal/lib/jwt"
 	"auth-service/internal/lib/ratelimit"
 	"auth-service/internal/postgres"
-	auditRepo "auth-service/internal/repository/audit"
-	sessionRepo "auth-service/internal/repository/session"
-	userRepo "auth-service/internal/repository/user"
 	"auth-service/internal/service/auth"
-	"auth-service/pkg/hooks"
-	"auth-service/pkg/ports"
 	"log/slog"
 	"time"
 
@@ -40,9 +38,9 @@ func New(
 	gatewayCfg config.GatewayConfig,
 	env string,
 ) *App {
-	uRepo := userRepo.New(db.Pool)
-	sRepo := sessionRepo.New(db.Pool)
-	aRepo := auditRepo.New(db.Pool)
+	uRepo := pgstore.NewUserRepository(db.Pool)
+	sRepo := pgstore.NewSessionRepository(db.Pool)
+	aRepo := pgstore.NewAuditRepository(db.Pool)
 
 	// JWT strategy is currently hardwired to HS256.
 	// JWT_ALGORITHM and JWT_PRIVATE_KEY_PATH are parsed by config but not yet

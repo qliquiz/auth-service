@@ -12,13 +12,12 @@ import (
 	"time"
 
 	"auth-service/gen/api"
-	rediscache "auth-service/internal/cache/redis"
-	jwtlib "auth-service/internal/lib/jwt"
-	"auth-service/internal/repository/session"
+	rediscache "auth-service/internal/adapters/cache/redis"
+	"auth-service/internal/adapters/hooks"
+	pgstore "auth-service/internal/adapters/storage/postgres"
+	jwtlib "auth-service/internal/adapters/token/jwt"
 	"auth-service/internal/repository/testutil"
-	"auth-service/internal/repository/user"
 	"auth-service/internal/service/auth"
-	"auth-service/pkg/hooks"
 
 	"github.com/alicebob/miniredis/v2"
 	goredis "github.com/redis/go-redis/v9"
@@ -56,8 +55,8 @@ func newTestServer(t *testing.T) *testServer {
 
 	jwtMgr := jwtlib.New("e2e-test-secret-min-32-chars!!!!", 15*time.Minute)
 
-	uRepo := user.New(pool)
-	sRepo := session.New(pool)
+	uRepo := pgstore.NewUserRepository(pool)
+	sRepo := pgstore.NewSessionRepository(pool)
 	cache := rediscache.New(redisClient)
 	svc := auth.New(uRepo, sRepo, jwtMgr, cache, nil, nil, hooks.NoOp{}, slog.Default(), 7*24*time.Hour)
 

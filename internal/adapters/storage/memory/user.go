@@ -1,6 +1,3 @@
-// Package memory provides in-memory implementations of pkg/ports storage
-// interfaces. Suitable for unit tests and lightweight deployments that do not
-// require a persistent database.
 package memory
 
 import (
@@ -11,21 +8,17 @@ import (
 	"github.com/google/uuid"
 
 	"auth-service/internal/domain/models"
-	userRepo "auth-service/internal/repository/user"
-	"auth-service/pkg/ports"
+	"auth-service/internal/domain/ports"
 )
 
-// Compile-time assertion: UserStore must implement ports.UserStore.
 var _ ports.UserStore = (*UserStore)(nil)
 
-// UserStore is a thread-safe, in-memory implementation of ports.UserStore.
 type UserStore struct {
 	mu      sync.RWMutex
 	byID    map[string]*models.User
 	byEmail map[string]*models.User
 }
 
-// NewUserStore creates an empty UserStore.
 func NewUserStore() *UserStore {
 	return &UserStore{
 		byID:    make(map[string]*models.User),
@@ -38,7 +31,7 @@ func (s *UserStore) Create(_ context.Context, email, passwordHash string) (*mode
 	defer s.mu.Unlock()
 
 	if _, exists := s.byEmail[email]; exists {
-		return nil, userRepo.ErrAlreadyExists
+		return nil, ports.ErrUserAlreadyExists
 	}
 	u := &models.User{
 		ID:           uuid.NewString(),
@@ -57,7 +50,7 @@ func (s *UserStore) GetByEmail(_ context.Context, email string) (*models.User, e
 	defer s.mu.RUnlock()
 	u, ok := s.byEmail[email]
 	if !ok {
-		return nil, userRepo.ErrNotFound
+		return nil, ports.ErrUserNotFound
 	}
 	cp := *u
 	return &cp, nil
@@ -68,7 +61,7 @@ func (s *UserStore) GetByID(_ context.Context, id string) (*models.User, error) 
 	defer s.mu.RUnlock()
 	u, ok := s.byID[id]
 	if !ok {
-		return nil, userRepo.ErrNotFound
+		return nil, ports.ErrUserNotFound
 	}
 	cp := *u
 	return &cp, nil
