@@ -74,6 +74,30 @@ service AuthService {
       body: "*"
     };
   };
+
+  // Request a password reset OTP. Always returns success (anti-enumeration).
+  rpc RequestPasswordReset(RequestPasswordResetRequest) returns (RequestPasswordResetResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth/password-reset/request"
+      body: "*"
+    };
+  };
+
+  // Verify OTP code. Returns a short-lived reset_token on success.
+  rpc VerifyResetCode(VerifyResetCodeRequest) returns (VerifyResetCodeResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth/password-reset/verify"
+      body: "*"
+    };
+  };
+
+  // Set a new password using the reset_token from VerifyResetCode. Revokes all sessions.
+  rpc ResetPassword(ResetPasswordRequest) returns (ResetPasswordResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth/password-reset/confirm"
+      body: "*"
+    };
+  };
 }
 
 // ── Register ─────────────────────────────────────────────────────────────────
@@ -172,3 +196,27 @@ message ChangePasswordRequest {
 }
 
 message ChangePasswordResponse {}
+
+// ── PasswordReset ─────────────────────────────────────────────────────────────
+
+message RequestPasswordResetRequest {
+  string email = 1;
+}
+
+message RequestPasswordResetResponse {}
+
+message VerifyResetCodeRequest {
+  string email = 1;
+  string otp = 2;
+}
+
+message VerifyResetCodeResponse {
+  string reset_token = 1;
+}
+
+message ResetPasswordRequest {
+  string reset_token = 1;
+  string new_password = 2;
+}
+
+message ResetPasswordResponse {}

@@ -147,6 +147,105 @@
         ]
       }
     },
+    "/v1/auth/password-reset/confirm": {
+      "post": {
+        "summary": "Set a new password using the reset_token from VerifyResetCode. Revokes all sessions.",
+        "operationId": "AuthService_ResetPassword",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/apiResetPasswordResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/apiResetPasswordRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
+    "/v1/auth/password-reset/request": {
+      "post": {
+        "summary": "Request a password reset OTP. Always returns success (anti-enumeration).",
+        "operationId": "AuthService_RequestPasswordReset",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/apiRequestPasswordResetResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/apiRequestPasswordResetRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
+    "/v1/auth/password-reset/verify": {
+      "post": {
+        "summary": "Verify OTP code. Returns a short-lived reset_token on success.",
+        "operationId": "AuthService_VerifyResetCode",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/apiVerifyResetCodeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/apiVerifyResetCodeRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
     "/v1/auth/refresh": {
       "post": {
         "summary": "Refresh access token using a valid refresh token (rotates the refresh token).",
@@ -421,6 +520,31 @@
         }
       }
     },
+    "apiRequestPasswordResetRequest": {
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string"
+        }
+      }
+    },
+    "apiRequestPasswordResetResponse": {
+      "type": "object"
+    },
+    "apiResetPasswordRequest": {
+      "type": "object",
+      "properties": {
+        "resetToken": {
+          "type": "string"
+        },
+        "newPassword": {
+          "type": "string"
+        }
+      }
+    },
+    "apiResetPasswordResponse": {
+      "type": "object"
+    },
     "apiRevokeSessionResponse": {
       "type": "object"
     },
@@ -473,6 +597,25 @@
           "items": {
             "type": "string"
           }
+        }
+      }
+    },
+    "apiVerifyResetCodeRequest": {
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "otp": {
+          "type": "string"
+        }
+      }
+    },
+    "apiVerifyResetCodeResponse": {
+      "type": "object",
+      "properties": {
+        "resetToken": {
+          "type": "string"
         }
       }
     },

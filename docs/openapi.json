@@ -17,6 +17,10 @@
       "description": "Public endpoints — no credentials required."
     },
     {
+      "name": "PasswordReset",
+      "description": "Three-step OTP-based password reset. All endpoints are unauthenticated and rate-limited."
+    },
+    {
       "name": "Sessions",
       "description": "Session management — requires a valid access token in the `Authorization` header."
     }
@@ -292,6 +296,71 @@
       "ChangePasswordResponse": {
         "type": "object",
         "description": "Empty response — password updated successfully. The current session remains valid."
+      },
+      "RequestPasswordResetRequest": {
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "The account email address to send the OTP to.",
+            "example": "alice@example.com"
+          }
+        }
+      },
+      "VerifyResetCodeRequest": {
+        "type": "object",
+        "required": [
+          "email",
+          "otp"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "The email address the OTP was sent to.",
+            "example": "alice@example.com"
+          },
+          "otp": {
+            "type": "string",
+            "description": "6-digit OTP received via email.",
+            "example": "482910"
+          }
+        }
+      },
+      "VerifyResetCodeResponse": {
+        "type": "object",
+        "properties": {
+          "resetToken": {
+            "type": "string",
+            "description": "Short-lived one-use token (15 min TTL). Pass this to `/v1/auth/password-reset/confirm`.",
+            "example": "v2.local.Abc123..."
+          }
+        }
+      },
+      "ResetPasswordRequest": {
+        "type": "object",
+        "required": [
+          "resetToken",
+          "newPassword"
+        ],
+        "properties": {
+          "resetToken": {
+            "type": "string",
+            "description": "The one-use token returned by `/v1/auth/password-reset/verify`.",
+            "example": "v2.local.Abc123..."
+          },
+          "newPassword": {
+            "type": "string",
+            "format": "password",
+            "minLength": 8,
+            "description": "The new password. Minimum 8 characters, at least one letter and one digit.",
+            "example": "n3wS3cure!"
+          }
+        }
       },
       "ErrorResponse": {
         "type": "object",
@@ -932,6 +1001,245 @@
                 "example": {
                   "code": 8,
                   "message": "too many requests from your IP, try again in 1m0s",
+                  "details": []
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/v1/auth/password-reset/request": {
+      "post": {
+        "tags": [
+          "PasswordReset"
+        ],
+        "summary": "Request a password reset OTP",
+        "description": "Sends a 6-digit OTP to the registered email address via the hook event system.\n\n**Anti-enumeration:** always returns HTTP 200 regardless of whether the email is registered. This prevents attackers from discovering which emails have accounts.\n\nIf a previous OTP exists for the same email it is overwritten (implicit re-request).\n\nOTP TTL: **15 minutes**.",
+        "operationId": "RequestPasswordReset",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestPasswordResetRequest"
+              },
+              "example": {
+                "email": "alice@example.com"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OTP dispatched (or silently ignored for unregistered email).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                },
+                "example": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed email address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": 3,
+                  "message": "invalid email format",
+                  "details": []
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests — IP rate limit exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": 8,
+                  "message": "too many login attempts from your IP, try again in 1m0s",
+                  "details": []
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/v1/auth/password-reset/verify": {
+      "post": {
+        "tags": [
+          "PasswordReset"
+        ],
+        "summary": "Verify OTP code",
+        "description": "Validates the 6-digit OTP sent to the user's email. On success, returns a **one-use `reset_token`** (15 min TTL) that must be passed to `/v1/auth/password-reset/confirm`.\n\n**Attempt limit:** after **5 wrong attempts** the OTP is invalidated and the user must request a new one.\n\nThe OTP is consumed on the first successful verification — it cannot be used again.",
+        "operationId": "VerifyResetCode",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyResetCodeRequest"
+              },
+              "example": {
+                "email": "alice@example.com",
+                "otp": "482910"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OTP verified. Use the returned `resetToken` in the next step.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifyResetCodeResponse"
+                },
+                "example": {
+                  "resetToken": "v2.local.Abc123..."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "OTP is wrong, expired, or the attempt limit has been reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "wrong_code": {
+                    "summary": "Wrong or expired OTP",
+                    "value": {
+                      "code": 16,
+                      "message": "invalid or expired code",
+                      "details": []
+                    }
+                  },
+                  "too_many": {
+                    "summary": "Too many wrong attempts",
+                    "value": {
+                      "code": 16,
+                      "message": "too many attempts",
+                      "details": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests — IP rate limit exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": 8,
+                  "message": "too many login attempts from your IP, try again in 1m0s",
+                  "details": []
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/v1/auth/password-reset/confirm": {
+      "post": {
+        "tags": [
+          "PasswordReset"
+        ],
+        "summary": "Set new password",
+        "description": "Sets a new password using the `reset_token` obtained from `/v1/auth/password-reset/verify`.\n\nThe token is **one-use** — it is deleted immediately before the password is updated, preventing concurrent reuse.\n\nAll existing sessions for the user are **revoked** after the password is changed. The user must log in again with the new password.",
+        "operationId": "ResetPassword",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPasswordRequest"
+              },
+              "example": {
+                "resetToken": "v2.local.Abc123...",
+                "newPassword": "n3wS3cure!"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password updated. All sessions revoked — the user must log in again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                },
+                "example": {}
+              }
+            }
+          },
+          "400": {
+            "description": "New password does not meet strength requirements.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": 3,
+                  "message": "password must be at least 8 characters, contain at least one letter and one digit",
+                  "details": []
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Reset token is invalid, expired, or has already been used.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": 16,
+                  "message": "invalid or expired reset token",
+                  "details": []
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests — IP rate limit exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": 8,
+                  "message": "too many login attempts from your IP, try again in 1m0s",
                   "details": []
                 }
               }

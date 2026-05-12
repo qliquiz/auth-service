@@ -938,6 +938,270 @@ func (*ChangePasswordResponse) Descriptor() ([]byte, []int) {
 	return file_auth_proto_rawDescGZIP(), []int{18}
 }
 
+type RequestPasswordResetRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Email         string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestPasswordResetRequest) Reset() {
+	*x = RequestPasswordResetRequest{}
+	mi := &file_auth_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestPasswordResetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestPasswordResetRequest) ProtoMessage() {}
+
+func (x *RequestPasswordResetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_auth_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestPasswordResetRequest.ProtoReflect.Descriptor instead.
+func (*RequestPasswordResetRequest) Descriptor() ([]byte, []int) {
+	return file_auth_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *RequestPasswordResetRequest) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+type RequestPasswordResetResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestPasswordResetResponse) Reset() {
+	*x = RequestPasswordResetResponse{}
+	mi := &file_auth_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestPasswordResetResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestPasswordResetResponse) ProtoMessage() {}
+
+func (x *RequestPasswordResetResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_auth_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestPasswordResetResponse.ProtoReflect.Descriptor instead.
+func (*RequestPasswordResetResponse) Descriptor() ([]byte, []int) {
+	return file_auth_proto_rawDescGZIP(), []int{20}
+}
+
+type VerifyResetCodeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Email         string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
+	Otp           string                 `protobuf:"bytes,2,opt,name=otp,proto3" json:"otp,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VerifyResetCodeRequest) Reset() {
+	*x = VerifyResetCodeRequest{}
+	mi := &file_auth_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VerifyResetCodeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VerifyResetCodeRequest) ProtoMessage() {}
+
+func (x *VerifyResetCodeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_auth_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VerifyResetCodeRequest.ProtoReflect.Descriptor instead.
+func (*VerifyResetCodeRequest) Descriptor() ([]byte, []int) {
+	return file_auth_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *VerifyResetCodeRequest) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+func (x *VerifyResetCodeRequest) GetOtp() string {
+	if x != nil {
+		return x.Otp
+	}
+	return ""
+}
+
+type VerifyResetCodeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ResetToken    string                 `protobuf:"bytes,1,opt,name=reset_token,json=resetToken,proto3" json:"reset_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VerifyResetCodeResponse) Reset() {
+	*x = VerifyResetCodeResponse{}
+	mi := &file_auth_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VerifyResetCodeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VerifyResetCodeResponse) ProtoMessage() {}
+
+func (x *VerifyResetCodeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_auth_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VerifyResetCodeResponse.ProtoReflect.Descriptor instead.
+func (*VerifyResetCodeResponse) Descriptor() ([]byte, []int) {
+	return file_auth_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *VerifyResetCodeResponse) GetResetToken() string {
+	if x != nil {
+		return x.ResetToken
+	}
+	return ""
+}
+
+type ResetPasswordRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ResetToken    string                 `protobuf:"bytes,1,opt,name=reset_token,json=resetToken,proto3" json:"reset_token,omitempty"`
+	NewPassword   string                 `protobuf:"bytes,2,opt,name=new_password,json=newPassword,proto3" json:"new_password,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResetPasswordRequest) Reset() {
+	*x = ResetPasswordRequest{}
+	mi := &file_auth_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResetPasswordRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResetPasswordRequest) ProtoMessage() {}
+
+func (x *ResetPasswordRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_auth_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResetPasswordRequest.ProtoReflect.Descriptor instead.
+func (*ResetPasswordRequest) Descriptor() ([]byte, []int) {
+	return file_auth_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *ResetPasswordRequest) GetResetToken() string {
+	if x != nil {
+		return x.ResetToken
+	}
+	return ""
+}
+
+func (x *ResetPasswordRequest) GetNewPassword() string {
+	if x != nil {
+		return x.NewPassword
+	}
+	return ""
+}
+
+type ResetPasswordResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResetPasswordResponse) Reset() {
+	*x = ResetPasswordResponse{}
+	mi := &file_auth_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResetPasswordResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResetPasswordResponse) ProtoMessage() {}
+
+func (x *ResetPasswordResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_auth_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResetPasswordResponse.ProtoReflect.Descriptor instead.
+func (*ResetPasswordResponse) Descriptor() ([]byte, []int) {
+	return file_auth_proto_rawDescGZIP(), []int{24}
+}
+
 var File_auth_proto protoreflect.FileDescriptor
 
 const file_auth_proto_rawDesc = "" +
@@ -997,7 +1261,21 @@ const file_auth_proto_rawDesc = "" +
 	"\x10current_password\x18\x01 \x01(\tR\x0fcurrentPassword\x12!\n" +
 	"\fnew_password\x18\x02 \x01(\tR\vnewPassword\x12#\n" +
 	"\rrefresh_token\x18\x03 \x01(\tR\frefreshToken\"\x18\n" +
-	"\x16ChangePasswordResponse2\xe2\x06\n" +
+	"\x16ChangePasswordResponse\"3\n" +
+	"\x1bRequestPasswordResetRequest\x12\x14\n" +
+	"\x05email\x18\x01 \x01(\tR\x05email\"\x1e\n" +
+	"\x1cRequestPasswordResetResponse\"@\n" +
+	"\x16VerifyResetCodeRequest\x12\x14\n" +
+	"\x05email\x18\x01 \x01(\tR\x05email\x12\x10\n" +
+	"\x03otp\x18\x02 \x01(\tR\x03otp\":\n" +
+	"\x17VerifyResetCodeResponse\x12\x1f\n" +
+	"\vreset_token\x18\x01 \x01(\tR\n" +
+	"resetToken\"Z\n" +
+	"\x14ResetPasswordRequest\x12\x1f\n" +
+	"\vreset_token\x18\x01 \x01(\tR\n" +
+	"resetToken\x12!\n" +
+	"\fnew_password\x18\x02 \x01(\tR\vnewPassword\"\x17\n" +
+	"\x15ResetPasswordResponse2\xd9\t\n" +
 	"\vAuthService\x12U\n" +
 	"\bRegister\x12\x14.api.RegisterRequest\x1a\x15.api.RegisterResponse\"\x1c\x82\xd3\xe4\x93\x02\x16:\x01*\"\x11/v1/auth/register\x12I\n" +
 	"\x05Login\x12\x11.api.LoginRequest\x1a\x12.api.LoginResponse\"\x19\x82\xd3\xe4\x93\x02\x13:\x01*\"\x0e/v1/auth/login\x12d\n" +
@@ -1007,7 +1285,10 @@ const file_auth_proto_rawDesc = "" +
 	"\tLogoutAll\x12\x15.api.LogoutAllRequest\x1a\x16.api.LogoutAllResponse\"\x1e\x82\xd3\xe4\x93\x02\x18:\x01*\"\x13/v1/auth/logout-all\x12^\n" +
 	"\fListSessions\x12\x18.api.ListSessionsRequest\x1a\x19.api.ListSessionsResponse\"\x19\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/auth/sessions\x12n\n" +
 	"\rRevokeSession\x12\x19.api.RevokeSessionRequest\x1a\x1a.api.RevokeSessionResponse\"&\x82\xd3\xe4\x93\x02 *\x1e/v1/auth/sessions/{session_id}\x12n\n" +
-	"\x0eChangePassword\x12\x1a.api.ChangePasswordRequest\x1a\x1b.api.ChangePasswordResponse\"#\x82\xd3\xe4\x93\x02\x1d:\x01*\"\x18/v1/auth/change-passwordB\x1aZ\x18auth-service/gen/api;apib\x06proto3"
+	"\x0eChangePassword\x12\x1a.api.ChangePasswordRequest\x1a\x1b.api.ChangePasswordResponse\"#\x82\xd3\xe4\x93\x02\x1d:\x01*\"\x18/v1/auth/change-password\x12\x87\x01\n" +
+	"\x14RequestPasswordReset\x12 .api.RequestPasswordResetRequest\x1a!.api.RequestPasswordResetResponse\"*\x82\xd3\xe4\x93\x02$:\x01*\"\x1f/v1/auth/password-reset/request\x12w\n" +
+	"\x0fVerifyResetCode\x12\x1b.api.VerifyResetCodeRequest\x1a\x1c.api.VerifyResetCodeResponse\")\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/auth/password-reset/verify\x12r\n" +
+	"\rResetPassword\x12\x19.api.ResetPasswordRequest\x1a\x1a.api.ResetPasswordResponse\"*\x82\xd3\xe4\x93\x02$:\x01*\"\x1f/v1/auth/password-reset/confirmB\x1aZ\x18auth-service/gen/api;apib\x06proto3"
 
 var (
 	file_auth_proto_rawDescOnce sync.Once
@@ -1021,27 +1302,33 @@ func file_auth_proto_rawDescGZIP() []byte {
 	return file_auth_proto_rawDescData
 }
 
-var file_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_auth_proto_goTypes = []any{
-	(*RegisterRequest)(nil),        // 0: api.RegisterRequest
-	(*RegisterResponse)(nil),       // 1: api.RegisterResponse
-	(*LoginRequest)(nil),           // 2: api.LoginRequest
-	(*LoginResponse)(nil),          // 3: api.LoginResponse
-	(*ValidateTokenRequest)(nil),   // 4: api.ValidateTokenRequest
-	(*ValidateTokenResponse)(nil),  // 5: api.ValidateTokenResponse
-	(*RefreshTokenRequest)(nil),    // 6: api.RefreshTokenRequest
-	(*RefreshTokenResponse)(nil),   // 7: api.RefreshTokenResponse
-	(*LogoutRequest)(nil),          // 8: api.LogoutRequest
-	(*LogoutResponse)(nil),         // 9: api.LogoutResponse
-	(*LogoutAllRequest)(nil),       // 10: api.LogoutAllRequest
-	(*LogoutAllResponse)(nil),      // 11: api.LogoutAllResponse
-	(*SessionInfo)(nil),            // 12: api.SessionInfo
-	(*ListSessionsRequest)(nil),    // 13: api.ListSessionsRequest
-	(*ListSessionsResponse)(nil),   // 14: api.ListSessionsResponse
-	(*RevokeSessionRequest)(nil),   // 15: api.RevokeSessionRequest
-	(*RevokeSessionResponse)(nil),  // 16: api.RevokeSessionResponse
-	(*ChangePasswordRequest)(nil),  // 17: api.ChangePasswordRequest
-	(*ChangePasswordResponse)(nil), // 18: api.ChangePasswordResponse
+	(*RegisterRequest)(nil),              // 0: api.RegisterRequest
+	(*RegisterResponse)(nil),             // 1: api.RegisterResponse
+	(*LoginRequest)(nil),                 // 2: api.LoginRequest
+	(*LoginResponse)(nil),                // 3: api.LoginResponse
+	(*ValidateTokenRequest)(nil),         // 4: api.ValidateTokenRequest
+	(*ValidateTokenResponse)(nil),        // 5: api.ValidateTokenResponse
+	(*RefreshTokenRequest)(nil),          // 6: api.RefreshTokenRequest
+	(*RefreshTokenResponse)(nil),         // 7: api.RefreshTokenResponse
+	(*LogoutRequest)(nil),                // 8: api.LogoutRequest
+	(*LogoutResponse)(nil),               // 9: api.LogoutResponse
+	(*LogoutAllRequest)(nil),             // 10: api.LogoutAllRequest
+	(*LogoutAllResponse)(nil),            // 11: api.LogoutAllResponse
+	(*SessionInfo)(nil),                  // 12: api.SessionInfo
+	(*ListSessionsRequest)(nil),          // 13: api.ListSessionsRequest
+	(*ListSessionsResponse)(nil),         // 14: api.ListSessionsResponse
+	(*RevokeSessionRequest)(nil),         // 15: api.RevokeSessionRequest
+	(*RevokeSessionResponse)(nil),        // 16: api.RevokeSessionResponse
+	(*ChangePasswordRequest)(nil),        // 17: api.ChangePasswordRequest
+	(*ChangePasswordResponse)(nil),       // 18: api.ChangePasswordResponse
+	(*RequestPasswordResetRequest)(nil),  // 19: api.RequestPasswordResetRequest
+	(*RequestPasswordResetResponse)(nil), // 20: api.RequestPasswordResetResponse
+	(*VerifyResetCodeRequest)(nil),       // 21: api.VerifyResetCodeRequest
+	(*VerifyResetCodeResponse)(nil),      // 22: api.VerifyResetCodeResponse
+	(*ResetPasswordRequest)(nil),         // 23: api.ResetPasswordRequest
+	(*ResetPasswordResponse)(nil),        // 24: api.ResetPasswordResponse
 }
 var file_auth_proto_depIdxs = []int32{
 	12, // 0: api.ListSessionsResponse.sessions:type_name -> api.SessionInfo
@@ -1054,17 +1341,23 @@ var file_auth_proto_depIdxs = []int32{
 	13, // 7: api.AuthService.ListSessions:input_type -> api.ListSessionsRequest
 	15, // 8: api.AuthService.RevokeSession:input_type -> api.RevokeSessionRequest
 	17, // 9: api.AuthService.ChangePassword:input_type -> api.ChangePasswordRequest
-	1,  // 10: api.AuthService.Register:output_type -> api.RegisterResponse
-	3,  // 11: api.AuthService.Login:output_type -> api.LoginResponse
-	5,  // 12: api.AuthService.ValidateToken:output_type -> api.ValidateTokenResponse
-	7,  // 13: api.AuthService.RefreshToken:output_type -> api.RefreshTokenResponse
-	9,  // 14: api.AuthService.Logout:output_type -> api.LogoutResponse
-	11, // 15: api.AuthService.LogoutAll:output_type -> api.LogoutAllResponse
-	14, // 16: api.AuthService.ListSessions:output_type -> api.ListSessionsResponse
-	16, // 17: api.AuthService.RevokeSession:output_type -> api.RevokeSessionResponse
-	18, // 18: api.AuthService.ChangePassword:output_type -> api.ChangePasswordResponse
-	10, // [10:19] is the sub-list for method output_type
-	1,  // [1:10] is the sub-list for method input_type
+	19, // 10: api.AuthService.RequestPasswordReset:input_type -> api.RequestPasswordResetRequest
+	21, // 11: api.AuthService.VerifyResetCode:input_type -> api.VerifyResetCodeRequest
+	23, // 12: api.AuthService.ResetPassword:input_type -> api.ResetPasswordRequest
+	1,  // 13: api.AuthService.Register:output_type -> api.RegisterResponse
+	3,  // 14: api.AuthService.Login:output_type -> api.LoginResponse
+	5,  // 15: api.AuthService.ValidateToken:output_type -> api.ValidateTokenResponse
+	7,  // 16: api.AuthService.RefreshToken:output_type -> api.RefreshTokenResponse
+	9,  // 17: api.AuthService.Logout:output_type -> api.LogoutResponse
+	11, // 18: api.AuthService.LogoutAll:output_type -> api.LogoutAllResponse
+	14, // 19: api.AuthService.ListSessions:output_type -> api.ListSessionsResponse
+	16, // 20: api.AuthService.RevokeSession:output_type -> api.RevokeSessionResponse
+	18, // 21: api.AuthService.ChangePassword:output_type -> api.ChangePasswordResponse
+	20, // 22: api.AuthService.RequestPasswordReset:output_type -> api.RequestPasswordResetResponse
+	22, // 23: api.AuthService.VerifyResetCode:output_type -> api.VerifyResetCodeResponse
+	24, // 24: api.AuthService.ResetPassword:output_type -> api.ResetPasswordResponse
+	13, // [13:25] is the sub-list for method output_type
+	1,  // [1:13] is the sub-list for method input_type
 	1,  // [1:1] is the sub-list for extension type_name
 	1,  // [1:1] is the sub-list for extension extendee
 	0,  // [0:1] is the sub-list for field type_name
@@ -1081,7 +1374,7 @@ func file_auth_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_auth_proto_rawDesc), len(file_auth_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   19,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -19,6 +19,7 @@ import (
 	"auth-service/internal/domain/models"
 	"auth-service/internal/domain/ports"
 	"auth-service/internal/lib/bruteforce"
+	"auth-service/internal/lib/otp"
 	"auth-service/internal/lib/password"
 	"auth-service/internal/lib/token"
 	"auth-service/internal/lib/validate"
@@ -33,6 +34,7 @@ type AuthService struct {
 	auditStore   ports.AuditStore // nil = audit disabled
 	tokenMgr     ports.AccessTokenManager
 	cache        ports.SessionCache
+	resetStore   ports.PasswordResetStore
 	hook         ports.EventHook   // nil = no custom hook
 	bruteGuard   *bruteforce.Guard // nil = brute-force protection disabled
 	log          *slog.Logger
@@ -44,6 +46,7 @@ func New(
 	sessionStore ports.SessionStore,
 	tokenMgr ports.AccessTokenManager,
 	cache ports.SessionCache,
+	resetStore ports.PasswordResetStore,
 	auditStore ports.AuditStore,
 	bruteGuard *bruteforce.Guard,
 	hook ports.EventHook,
@@ -56,6 +59,7 @@ func New(
 		auditStore:   auditStore,
 		tokenMgr:     tokenMgr,
 		cache:        cache,
+		resetStore:   resetStore,
 		hook:         hook,
 		bruteGuard:   bruteGuard,
 		log:          log,
@@ -532,6 +536,153 @@ func (s *AuthService) ChangePassword(ctx context.Context, req *api.ChangePasswor
 
 	log.Info("password changed", slog.String("user_id", userID))
 	return &api.ChangePasswordResponse{}, nil
+}
+
+// ── RequestPasswordReset ──────────────────────────────────────────────────────
+
+func (s *AuthService) RequestPasswordReset(ctx context.Context, req *api.RequestPasswordResetRequest) (*api.RequestPasswordResetResponse, error) {
+	const op = "auth.RequestPasswordReset"
+	log := s.log.With(slog.String("op", op))
+
+	if err := validate.Email(req.Email); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	user, err := s.userStore.GetByEmail(ctx, req.Email)
+	if err != nil {
+		if errors.Is(err, ports.ErrUserNotFound) {
+			return &api.RequestPasswordResetResponse{}, nil
+		}
+		log.Error("get user by email", slog.String("err", err.Error()))
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+
+	code, err := otp.Generate()
+	if err != nil {
+		log.Error("generate otp", slog.String("err", err.Error()))
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+
+	if err = s.resetStore.SaveOTP(ctx, user.ID, req.Email, token.Hash(code), 15*time.Minute); err != nil {
+		log.Error("save otp", slog.String("err", err.Error()))
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+
+	ipAddr, userAgent := extractClientInfo(ctx)
+	s.logAudit(strPtr(user.ID), ports.AuditEventPasswordResetRequest, ipAddr, userAgent, nil)
+	s.fireHook(user.ID, user.Email, ports.AuditEventPasswordResetRequest, ipAddr, userAgent,
+		map[string]string{"otp_code": code})
+
+	return &api.RequestPasswordResetResponse{}, nil
+}
+
+// ── VerifyResetCode ───────────────────────────────────────────────────────────
+
+const maxOTPAttempts = 5
+
+func (s *AuthService) VerifyResetCode(ctx context.Context, req *api.VerifyResetCodeRequest) (*api.VerifyResetCodeResponse, error) {
+	const op = "auth.VerifyResetCode"
+	log := s.log.With(slog.String("op", op))
+
+	if err := validate.Email(req.Email); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	record, err := s.resetStore.GetOTP(ctx, req.Email)
+	if err != nil {
+		if errors.Is(err, ports.ErrResetCodeNotFound) {
+			return nil, status.Error(codes.Unauthenticated, "invalid or expired code")
+		}
+		log.Error("get otp", slog.String("err", err.Error()))
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+
+	attempts, err := s.resetStore.IncrOTPAttempts(ctx, req.Email)
+	if err != nil {
+		if errors.Is(err, ports.ErrResetCodeNotFound) {
+			return nil, status.Error(codes.Unauthenticated, "invalid or expired code")
+		}
+		log.Error("incr otp attempts", slog.String("err", err.Error()))
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+
+	if attempts >= maxOTPAttempts {
+		_ = s.resetStore.DeleteOTP(ctx, req.Email)
+		return nil, status.Error(codes.Unauthenticated, "too many attempts")
+	}
+
+	if token.Hash(req.Otp) != record.OTPHash {
+		return nil, status.Error(codes.Unauthenticated, "invalid or expired code")
+	}
+
+	if err = s.resetStore.DeleteOTP(ctx, req.Email); err != nil {
+		log.Warn("delete otp after verify", slog.String("err", err.Error()))
+	}
+
+	plain, hash, err := token.Generate()
+	if err != nil {
+		log.Error("generate reset token", slog.String("err", err.Error()))
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+
+	if err = s.resetStore.SaveResetToken(ctx, hash, record.UserID, req.Email, 15*time.Minute); err != nil {
+		log.Error("save reset token", slog.String("err", err.Error()))
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+
+	return &api.VerifyResetCodeResponse{ResetToken: plain}, nil
+}
+
+// ── ResetPassword ─────────────────────────────────────────────────────────────
+
+func (s *AuthService) ResetPassword(ctx context.Context, req *api.ResetPasswordRequest) (*api.ResetPasswordResponse, error) {
+	const op = "auth.ResetPassword"
+	log := s.log.With(slog.String("op", op))
+
+	if err := validate.Password(req.NewPassword); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	tokenRec, err := s.resetStore.GetResetToken(ctx, token.Hash(req.ResetToken))
+	if err != nil {
+		if errors.Is(err, ports.ErrResetTokenNotFound) {
+			return nil, status.Error(codes.Unauthenticated, "invalid or expired reset token")
+		}
+		log.Error("get reset token", slog.String("err", err.Error()))
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+
+	// One-use: delete before writing new password to prevent concurrent reuse.
+	if err = s.resetStore.DeleteResetToken(ctx, token.Hash(req.ResetToken)); err != nil {
+		log.Error("delete reset token", slog.String("err", err.Error()))
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+
+	newHash, err := password.Hash(req.NewPassword)
+	if err != nil {
+		log.Error("hash new password", slog.String("err", err.Error()))
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+
+	if err = s.userStore.UpdatePasswordHash(ctx, tokenRec.UserID, newHash); err != nil {
+		log.Error("update password hash", slog.String("err", err.Error()))
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+
+	deletedHashes, err := s.sessionStore.DeleteAllByUserID(ctx, tokenRec.UserID)
+	if err != nil {
+		log.Error("revoke all sessions", slog.String("err", err.Error()))
+	}
+	for _, h := range deletedHashes {
+		s.deleteSessionFromCache(ctx, h)
+	}
+
+	ipAddr, userAgent := extractClientInfo(ctx)
+	s.logAudit(strPtr(tokenRec.UserID), ports.AuditEventPasswordReset, ipAddr, userAgent, nil)
+	s.fireHook(tokenRec.UserID, tokenRec.Email, ports.AuditEventPasswordReset, ipAddr, userAgent, nil)
+
+	log.Info("password reset", slog.String("user_id", tokenRec.UserID))
+	return &api.ResetPasswordResponse{}, nil
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

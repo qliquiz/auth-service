@@ -20,17 +20,20 @@
 
 ## API
 
-| Метод          | HTTP                                    | Auth       | Описание                                                                                                  |
-|----------------|-----------------------------------------|------------|-----------------------------------------------------------------------------------------------------------|
-| Register       | `POST /v1/auth/register`                | —          | Регистрация нового пользователя                                                                           |
-| Login          | `POST /v1/auth/login`                   | —          | Вход. Возвращает access + refresh токены. Поле `device_id` опционально                                    |
-| ValidateToken  | `POST /v1/auth/validate`                | —          | Stateless проверка JWT; для межсервисного использования                                                   |
-| RefreshToken   | `POST /v1/auth/refresh`                 | —          | Ротация токенов. Старый refresh-токен немедленно инвалидируется                                           |
-| Logout         | `POST /v1/auth/logout`                  | —          | Завершение сессии по `refresh_token` в теле запроса                                                       |
-| LogoutAll      | `POST /v1/auth/logout-all`              | Bearer JWT | Инвалидация всех сессий пользователя                                                                      |
-| ListSessions   | `GET /v1/auth/sessions`                 | Bearer JWT | Список активных сессий с информацией об устройствах                                                       |
-| RevokeSession  | `DELETE /v1/auth/sessions/{session_id}` | Bearer JWT | Отзыв конкретной сессии                                                                                   |
-| ChangePassword | `POST /v1/auth/change-password`         | Bearer JWT | Смена пароля. Отзывает все сессии кроме той, что указана в `refresh_token` (если не передан — все сессии) |
+| Метод                | HTTP                                    | Auth       | Описание                                                                                                    |
+|----------------------|-----------------------------------------|------------|-------------------------------------------------------------------------------------------------------------|
+| Register             | `POST /v1/auth/register`                | —          | Регистрация нового пользователя                                                                             |
+| Login                | `POST /v1/auth/login`                   | —          | Вход. Возвращает access + refresh токены. Поле `device_id` опционально                                      |
+| ValidateToken        | `POST /v1/auth/validate`                | —          | Stateless проверка JWT; для межсервисного использования                                                     |
+| RefreshToken         | `POST /v1/auth/refresh`                 | —          | Ротация токенов. Старый refresh-токен немедленно инвалидируется                                             |
+| Logout               | `POST /v1/auth/logout`                  | —          | Завершение сессии по `refresh_token` в теле запроса                                                         |
+| LogoutAll            | `POST /v1/auth/logout-all`              | Bearer JWT | Инвалидация всех сессий пользователя                                                                        |
+| ListSessions         | `GET /v1/auth/sessions`                 | Bearer JWT | Список активных сессий с информацией об устройствах                                                         |
+| RevokeSession        | `DELETE /v1/auth/sessions/{session_id}` | Bearer JWT | Отзыв конкретной сессии                                                                                     |
+| ChangePassword       | `POST /v1/auth/change-password`         | Bearer JWT | Смена пароля. Отзывает все сессии кроме той, что указана в `refresh_token` (если не передан — все сессии)   |
+| RequestPasswordReset | `POST /v1/auth/password-reset/request`  | —          | Запрос OTP для сброса пароля. Всегда возвращает 200 (anti-enumeration). OTP передаётся через hook-событие   |
+| VerifyResetCode      | `POST /v1/auth/password-reset/verify`   | —          | Проверка OTP. Возвращает одноразовый `reset_token` (TTL 15 мин). Блокировка после 5 неверных попыток        |
+| ResetPassword        | `POST /v1/auth/password-reset/confirm`  | —          | Смена пароля по `reset_token`. Одноразовый токен — отзывается мгновенно. Все сессии пользователя отзываются |
 
 Защищённые эндпоинты требуют заголовка `Authorization: Bearer <access_token>` (HTTP) или metadata `authorization` (
 gRPC).
@@ -160,6 +163,21 @@ curl -X POST http://localhost:8080/v1/auth/change-password \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <access_token>" \
   -d '{"currentPassword":"oldpassword","newPassword":"newpassword1","refreshToken":"<refresh_token>"}'
+
+# Сброс пароля — шаг 1: запрос OTP
+curl -X POST http://localhost:8080/v1/auth/password-reset/request \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com"}'
+
+# Сброс пароля — шаг 2: проверка OTP → получение reset_token
+curl -X POST http://localhost:8080/v1/auth/password-reset/verify \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","otp":"482910"}'
+
+# Сброс пароля — шаг 3: установка нового пароля
+curl -X POST http://localhost:8080/v1/auth/password-reset/confirm \
+  -H "Content-Type: application/json" \
+  -d '{"resetToken":"<reset_token>","newPassword":"newpassword1"}'
 ```
 
 ### gRPC (grpcurl)
