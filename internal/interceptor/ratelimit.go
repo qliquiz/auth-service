@@ -15,8 +15,9 @@ import (
 // sensitiveMethods receive a stricter per-IP rate limit because they are the
 // primary attack surface for credential stuffing and enumeration attacks.
 var sensitiveMethods = map[string]bool{
-	"Login":    true,
-	"Register": true,
+	"Login":          true,
+	"Register":       true,
+	"ChangePassword": true,
 }
 
 // RateLimit returns a gRPC unary server interceptor that enforces two rate limits:

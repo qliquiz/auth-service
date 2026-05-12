@@ -488,9 +488,6 @@ func (s *AuthService) ChangePassword(ctx context.Context, req *api.ChangePasswor
 
 	user, err := s.userStore.GetByID(ctx, userID)
 	if err != nil {
-		if errors.Is(err, ports.ErrUserNotFound) {
-			return nil, status.Error(codes.NotFound, "user not found")
-		}
 		log.Error("get user", slog.String("err", err.Error()))
 		return nil, status.Error(codes.Internal, "internal error")
 	}
@@ -501,7 +498,7 @@ func (s *AuthService) ChangePassword(ctx context.Context, req *api.ChangePasswor
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 	if !match {
-		return nil, status.Error(codes.Unauthenticated, "current password is incorrect")
+		return nil, status.Error(codes.Unauthenticated, "invalid credentials")
 	}
 
 	newHash, err := password.Hash(req.NewPassword)
