@@ -167,8 +167,8 @@ message RevokeSessionResponse {}
 
 message ChangePasswordRequest {
   string current_password = 1;
-  string new_password     = 2;
-  string refresh_token    = 3; // session to keep alive; if empty, all sessions are revoked
+  string new_password = 2;
+  string refresh_token = 3; // session to keep alive; if empty, all sessions are revoked
 }
 
 message ChangePasswordResponse {}

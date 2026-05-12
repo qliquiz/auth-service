@@ -20,16 +20,16 @@
 
 ## API
 
-| Метод         | HTTP                                    | Auth       | Описание                                                               |
-|---------------|-----------------------------------------|------------|------------------------------------------------------------------------|
-| Register      | `POST /v1/auth/register`                | —          | Регистрация нового пользователя                                        |
-| Login         | `POST /v1/auth/login`                   | —          | Вход. Возвращает access + refresh токены. Поле `device_id` опционально |
-| ValidateToken | `POST /v1/auth/validate`                | —          | Stateless проверка JWT; для межсервисного использования                |
-| RefreshToken  | `POST /v1/auth/refresh`                 | —          | Ротация токенов. Старый refresh-токен немедленно инвалидируется        |
-| Logout        | `POST /v1/auth/logout`                  | —          | Завершение сессии по `refresh_token` в теле запроса                    |
-| LogoutAll     | `POST /v1/auth/logout-all`              | Bearer JWT | Инвалидация всех сессий пользователя                                   |
-| ListSessions  | `GET /v1/auth/sessions`                 | Bearer JWT | Список активных сессий с информацией об устройствах                    |
-| RevokeSession  | `DELETE /v1/auth/sessions/{session_id}` | Bearer JWT | Отзыв конкретной сессии                                                |
+| Метод          | HTTP                                    | Auth       | Описание                                                                                                  |
+|----------------|-----------------------------------------|------------|-----------------------------------------------------------------------------------------------------------|
+| Register       | `POST /v1/auth/register`                | —          | Регистрация нового пользователя                                                                           |
+| Login          | `POST /v1/auth/login`                   | —          | Вход. Возвращает access + refresh токены. Поле `device_id` опционально                                    |
+| ValidateToken  | `POST /v1/auth/validate`                | —          | Stateless проверка JWT; для межсервисного использования                                                   |
+| RefreshToken   | `POST /v1/auth/refresh`                 | —          | Ротация токенов. Старый refresh-токен немедленно инвалидируется                                           |
+| Logout         | `POST /v1/auth/logout`                  | —          | Завершение сессии по `refresh_token` в теле запроса                                                       |
+| LogoutAll      | `POST /v1/auth/logout-all`              | Bearer JWT | Инвалидация всех сессий пользователя                                                                      |
+| ListSessions   | `GET /v1/auth/sessions`                 | Bearer JWT | Список активных сессий с информацией об устройствах                                                       |
+| RevokeSession  | `DELETE /v1/auth/sessions/{session_id}` | Bearer JWT | Отзыв конкретной сессии                                                                                   |
 | ChangePassword | `POST /v1/auth/change-password`         | Bearer JWT | Смена пароля. Отзывает все сессии кроме той, что указана в `refresh_token` (если не передан — все сессии) |
 
 Защищённые эндпоинты требуют заголовка `Authorization: Bearer <access_token>` (HTTP) или metadata `authorization` (
