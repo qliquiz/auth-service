@@ -606,7 +606,7 @@ func (s *AuthService) VerifyResetCode(ctx context.Context, req *api.VerifyResetC
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 
-	if attempts > maxOTPAttempts {
+	if attempts >= maxOTPAttempts {
 		_ = s.resetStore.DeleteOTP(ctx, req.Email)
 		return nil, status.Error(codes.Unauthenticated, "too many attempts")
 	}
@@ -615,7 +615,9 @@ func (s *AuthService) VerifyResetCode(ctx context.Context, req *api.VerifyResetC
 		return nil, status.Error(codes.Unauthenticated, "invalid or expired code")
 	}
 
-	_ = s.resetStore.DeleteOTP(ctx, req.Email)
+	if err = s.resetStore.DeleteOTP(ctx, req.Email); err != nil {
+		log.Warn("delete otp after verify", slog.String("err", err.Error()))
+	}
 
 	plain, hash, err := token.Generate()
 	if err != nil {

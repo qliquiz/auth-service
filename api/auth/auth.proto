@@ -207,7 +207,7 @@ message RequestPasswordResetResponse {}
 
 message VerifyResetCodeRequest {
   string email = 1;
-  string otp   = 2;
+  string otp = 2;
 }
 
 message VerifyResetCodeResponse {
@@ -215,8 +215,8 @@ message VerifyResetCodeResponse {
 }
 
 message ResetPasswordRequest {
-  string reset_token   = 1;
-  string new_password  = 2;
+  string reset_token = 1;
+  string new_password = 2;
 }
 
 message ResetPasswordResponse {}

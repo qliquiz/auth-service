@@ -1213,9 +1213,9 @@ func TestVerifyResetCode_TooManyAttempts(t *testing.T) {
 	user := fakeUser(t)
 
 	f.rStore.On("GetOTP", mock.Anything, user.Email).Return(&ports.OTPRecord{
-		UserID: user.ID, OTPHash: token.Hash("999999"), Attempts: 5,
+		UserID: user.ID, OTPHash: token.Hash("999999"), Attempts: 4,
 	}, nil)
-	f.rStore.On("IncrOTPAttempts", mock.Anything, user.Email).Return(6, nil)
+	f.rStore.On("IncrOTPAttempts", mock.Anything, user.Email).Return(5, nil)
 	f.rStore.On("DeleteOTP", mock.Anything, user.Email).Return(nil)
 
 	_, err := f.svc.VerifyResetCode(context.Background(), &api.VerifyResetCodeRequest{

@@ -40,8 +40,11 @@ type resetTokenData struct {
 }
 
 func (c *ResetCache) SaveOTP(ctx context.Context, userID, email, otpHash string, ttl time.Duration) error {
-	data, _ := json.Marshal(otpData{UserID: userID, OTPHash: otpHash})
-	if err := c.client.Set(ctx, otpPrefix+token.Hash(email), data, ttl).Err(); err != nil {
+	data, err := json.Marshal(otpData{UserID: userID, OTPHash: otpHash})
+	if err != nil {
+		return fmt.Errorf("marshal otp: %w", err)
+	}
+	if err = c.client.Set(ctx, otpPrefix+token.Hash(email), data, ttl).Err(); err != nil {
 		return fmt.Errorf("save otp: %w", err)
 	}
 	return nil
@@ -62,31 +65,29 @@ func (c *ResetCache) GetOTP(ctx context.Context, email string) (*ports.OTPRecord
 	return &ports.OTPRecord{UserID: d.UserID, OTPHash: d.OTPHash, Attempts: d.Attempts}, nil
 }
 
+// incrOTPScript atomically increments the attempts counter inside the stored JSON blob.
+// Returns the new attempts count, or -1 if the key is missing or already expired.
+var incrOTPScript = redis.NewScript(`
+local raw = redis.call('GET', KEYS[1])
+if raw == false then return -1 end
+local d = cjson.decode(raw)
+d.attempts = (d.attempts or 0) + 1
+local ttl = redis.call('PTTL', KEYS[1])
+if ttl <= 0 then return -1 end
+redis.call('SET', KEYS[1], cjson.encode(d), 'PX', ttl)
+return d.attempts
+`)
+
 func (c *ResetCache) IncrOTPAttempts(ctx context.Context, email string) (int, error) {
 	key := otpPrefix + token.Hash(email)
-
-	raw, err := c.client.Get(ctx, key).Bytes()
+	n, err := incrOTPScript.Run(ctx, c.client, []string{key}).Int()
 	if err != nil {
-		if errors.Is(err, redis.Nil) {
-			return 0, ports.ErrResetCodeNotFound
-		}
-		return 0, fmt.Errorf("get otp for incr: %w", err)
+		return 0, fmt.Errorf("incr otp attempts: %w", err)
 	}
-	var d otpData
-	if err = json.Unmarshal(raw, &d); err != nil {
-		return 0, fmt.Errorf("unmarshal otp: %w", err)
-	}
-	d.Attempts++
-
-	ttl, err := c.client.TTL(ctx, key).Result()
-	if err != nil || ttl <= 0 {
+	if n == -1 {
 		return 0, ports.ErrResetCodeNotFound
 	}
-	updated, _ := json.Marshal(d)
-	if err = c.client.Set(ctx, key, updated, ttl).Err(); err != nil {
-		return 0, fmt.Errorf("save otp after incr: %w", err)
-	}
-	return d.Attempts, nil
+	return n, nil
 }
 
 func (c *ResetCache) DeleteOTP(ctx context.Context, email string) error {
@@ -94,8 +95,11 @@ func (c *ResetCache) DeleteOTP(ctx context.Context, email string) error {
 }
 
 func (c *ResetCache) SaveResetToken(ctx context.Context, tokenHash, userID, email string, ttl time.Duration) error {
-	data, _ := json.Marshal(resetTokenData{UserID: userID, Email: email})
-	if err := c.client.Set(ctx, resetTokenPrefix+tokenHash, data, ttl).Err(); err != nil {
+	data, err := json.Marshal(resetTokenData{UserID: userID, Email: email})
+	if err != nil {
+		return fmt.Errorf("marshal reset token: %w", err)
+	}
+	if err = c.client.Set(ctx, resetTokenPrefix+tokenHash, data, ttl).Err(); err != nil {
 		return fmt.Errorf("save reset token: %w", err)
 	}
 	return nil
