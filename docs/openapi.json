@@ -262,6 +262,37 @@
         "type": "object",
         "description": "Empty response — the session has been revoked."
       },
+      "ChangePasswordRequest": {
+        "type": "object",
+        "required": [
+          "currentPassword",
+          "newPassword"
+        ],
+        "properties": {
+          "currentPassword": {
+            "type": "string",
+            "format": "password",
+            "description": "The user's current password. Used to confirm identity before the change is applied.",
+            "example": "s3cureP@ssw0rd"
+          },
+          "newPassword": {
+            "type": "string",
+            "format": "password",
+            "minLength": 8,
+            "description": "The new password. Same validation rules as registration: minimum 8 characters, at least one letter, at least one digit.",
+            "example": "n3wS3cure!"
+          },
+          "refreshToken": {
+            "type": "string",
+            "description": "Optional. The refresh token of the session to keep alive. All other sessions for this user will be revoked. If omitted, **all** sessions (including the current one) are revoked.",
+            "example": "v2.local.Tdm3..."
+          }
+        }
+      },
+      "ChangePasswordResponse": {
+        "type": "object",
+        "description": "Empty response — password updated successfully. The current session remains valid."
+      },
       "ErrorResponse": {
         "type": "object",
         "properties": {
@@ -789,6 +820,122 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthenticated"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/v1/auth/change-password": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Change password",
+        "description": "Updates the authenticated user's password.\n\nThe caller must prove ownership of the account by supplying the **current password** alongside the new one. All sessions except the one identified by `refresh_token` are revoked atomically after the password is updated.\n\n**Session behaviour:**\n- `refresh_token` provided and valid → that session is kept, all others are revoked.\n- `refresh_token` omitted or not found → **all sessions are revoked** (safe fallback — the user must log in again).\n\nThe current **access token remains valid** until its TTL expires (max 15 min). Discard it on the client side immediately after a successful password change.\n\n**Errors:**\n- `400 Bad Request` — new password does not meet strength requirements\n- `401 Unauthenticated` — missing/invalid `Authorization` header, or current password is wrong",
+        "operationId": "ChangePassword",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              },
+              "examples": {
+                "keep_session": {
+                  "summary": "Change password, keep current session",
+                  "value": {
+                    "currentPassword": "s3cureP@ssw0rd",
+                    "newPassword": "n3wS3cure!",
+                    "refreshToken": "v2.local.Tdm3..."
+                  }
+                },
+                "revoke_all": {
+                  "summary": "Change password, revoke all sessions",
+                  "value": {
+                    "currentPassword": "s3cureP@ssw0rd",
+                    "newPassword": "n3wS3cure!"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password changed successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangePasswordResponse"
+                },
+                "example": {}
+              }
+            }
+          },
+          "400": {
+            "description": "New password does not meet strength requirements (min 8 chars, ≥1 letter, ≥1 digit).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": 3,
+                  "message": "password must be at least 8 characters, contain at least one letter and one digit",
+                  "details": []
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid `Authorization` header, or current password is incorrect.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "no_token": {
+                    "summary": "Missing access token",
+                    "value": {
+                      "code": 16,
+                      "message": "missing authorization token",
+                      "details": []
+                    }
+                  },
+                  "wrong_password": {
+                    "summary": "Wrong current password",
+                    "value": {
+                      "code": 16,
+                      "message": "invalid credentials",
+                      "details": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests — IP rate limit exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": 8,
+                  "message": "too many requests from your IP, try again in 1m0s",
+                  "details": []
+                }
+              }
+            }
           },
           "500": {
             "$ref": "#/components/responses/InternalError"

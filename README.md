@@ -29,7 +29,8 @@
 | Logout        | `POST /v1/auth/logout`                  | —          | Завершение сессии по `refresh_token` в теле запроса                    |
 | LogoutAll     | `POST /v1/auth/logout-all`              | Bearer JWT | Инвалидация всех сессий пользователя                                   |
 | ListSessions  | `GET /v1/auth/sessions`                 | Bearer JWT | Список активных сессий с информацией об устройствах                    |
-| RevokeSession | `DELETE /v1/auth/sessions/{session_id}` | Bearer JWT | Отзыв конкретной сессии                                                |
+| RevokeSession  | `DELETE /v1/auth/sessions/{session_id}` | Bearer JWT | Отзыв конкретной сессии                                                |
+| ChangePassword | `POST /v1/auth/change-password`         | Bearer JWT | Смена пароля. Отзывает все сессии кроме той, что указана в `refresh_token` (если не передан — все сессии) |
 
 Защищённые эндпоинты требуют заголовка `Authorization: Bearer <access_token>` (HTTP) или metadata `authorization` (
 gRPC).
@@ -75,7 +76,7 @@ BRUTE_FORCE_LOCKOUT_TTL=15m  # how long the account stays locked
 
 # Rate limiting (per IP)
 RATE_LIMIT_GLOBAL_RPM=300    # max requests/min across all endpoints
-RATE_LIMIT_LOGIN_RPM=20      # stricter limit for Login and Register
+RATE_LIMIT_LOGIN_RPM=20      # stricter limit for Login, Register and ChangePassword
 ```
 
 > Внутри Docker: `POSTGRES_HOST=db`, `REDIS_HOST=redis`.
@@ -153,6 +154,12 @@ curl -X POST http://localhost:8080/v1/auth/refresh \
 # Список сессий
 curl -X GET http://localhost:8080/v1/auth/sessions \
   -H "Authorization: Bearer <access_token>"
+
+# Смена пароля (сохранить текущую сессию)
+curl -X POST http://localhost:8080/v1/auth/change-password \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <access_token>" \
+  -d '{"currentPassword":"oldpassword","newPassword":"newpassword1","refreshToken":"<refresh_token>"}'
 ```
 
 ### gRPC (grpcurl)
