@@ -470,6 +470,73 @@ func (s *AuthService) RevokeSession(ctx context.Context, req *api.RevokeSessionR
 	return &api.RevokeSessionResponse{}, nil
 }
 
+// ── ChangePassword ────────────────────────────────────────────────────────────
+
+func (s *AuthService) ChangePassword(ctx context.Context, req *api.ChangePasswordRequest) (*api.ChangePasswordResponse, error) {
+	const op = "auth.ChangePassword"
+
+	userID, err := s.extractUserIDFromCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	log := s.log.With(slog.String("op", op), slog.String("user_id", userID))
+
+	if err := validate.Password(req.NewPassword); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	user, err := s.userStore.GetByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, ports.ErrUserNotFound) {
+			return nil, status.Error(codes.NotFound, "user not found")
+		}
+		log.Error("get user", slog.String("err", err.Error()))
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+
+	match, err := password.Verify(req.CurrentPassword, user.PasswordHash)
+	if err != nil {
+		log.Error("verify password", slog.String("err", err.Error()))
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+	if !match {
+		return nil, status.Error(codes.Unauthenticated, "current password is incorrect")
+	}
+
+	newHash, err := password.Hash(req.NewPassword)
+	if err != nil {
+		log.Error("hash new password", slog.String("err", err.Error()))
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+
+	if err := s.userStore.UpdatePasswordHash(ctx, userID, newHash); err != nil {
+		log.Error("update password hash", slog.String("err", err.Error()))
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+
+	var keepHash string
+	if req.RefreshToken != "" {
+		keepHash = token.Hash(req.RefreshToken)
+	}
+
+	deletedHashes, err := s.sessionStore.DeleteAllByUserIDExcept(ctx, userID, keepHash)
+	if err != nil {
+		// Password already updated. Log but do not abort — user can call LogoutAll to clean up.
+		log.Error("revoke other sessions", slog.String("err", err.Error()))
+	}
+	for _, h := range deletedHashes {
+		s.deleteSessionFromCache(ctx, h)
+	}
+
+	ipAddr, userAgent := extractClientInfo(ctx)
+	s.logAudit(strPtr(userID), ports.AuditEventPasswordChange, ipAddr, userAgent, nil)
+	s.fireHook(userID, user.Email, ports.AuditEventPasswordChange, ipAddr, userAgent, nil)
+
+	log.Info("password changed", slog.String("user_id", userID))
+	return &api.ChangePasswordResponse{}, nil
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 // extractUserIDFromCtx parses the Bearer token from the gRPC metadata Authorization header.
