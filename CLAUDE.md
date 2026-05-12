@@ -155,9 +155,10 @@ Failures return `codes.InvalidArgument`.
 | Logout        | `POST /v1/auth/logout`                  | —          | Identified by `refresh_token` in body.                             |
 | LogoutAll     | `POST /v1/auth/logout-all`              | Bearer JWT | Revokes all sessions for the user.                                 |
 | ListSessions  | `GET /v1/auth/sessions`                 | Bearer JWT | Returns all active sessions with device info.                      |
-| RevokeSession | `DELETE /v1/auth/sessions/{session_id}` | Bearer JWT | Revokes a specific session.                                        |
+| RevokeSession  | `DELETE /v1/auth/sessions/{session_id}` | Bearer JWT | Revokes a specific session.                                        |
+| ChangePassword | `POST /v1/auth/change-password`         | Bearer JWT | Verifies current password, updates hash, revokes all sessions except the one identified by `refresh_token` (if omitted, all sessions revoked). |
 
-Protected endpoints (`LogoutAll`, `ListSessions`, `RevokeSession`) require `Authorization: Bearer <access_token>` —
+Protected endpoints (`LogoutAll`, `ListSessions`, `RevokeSession`, `ChangePassword`) require `Authorization: Bearer <access_token>` —
 works identically for HTTP and gRPC (via metadata).
 
 ## Database Schema
