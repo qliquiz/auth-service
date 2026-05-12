@@ -153,3 +153,52 @@ func TestMemorySessionStore_ListByUserID(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, result, 2)
 }
+
+func TestMemorySessionStore_DeleteAllByUserIDExcept_KeepsTarget(t *testing.T) {
+	t.Parallel()
+	store := memory.NewSessionStore()
+	ctx := context.Background()
+
+	require.NoError(t, store.Create(ctx, newSession("uid-keep", "hash-a")))
+	require.NoError(t, store.Create(ctx, newSession("uid-keep", "hash-b")))
+	require.NoError(t, store.Create(ctx, newSession("uid-keep", "hash-c")))
+	// Another user's session must survive.
+	require.NoError(t, store.Create(ctx, newSession("uid-other", "hash-other")))
+
+	deleted, err := store.DeleteAllByUserIDExcept(ctx, "uid-keep", "hash-b")
+	require.NoError(t, err)
+	require.Len(t, deleted, 2)
+	require.ElementsMatch(t, []string{"hash-a", "hash-c"}, deleted)
+
+	// hash-b must still exist.
+	_, err = store.GetByTokenHash(ctx, "hash-b")
+	require.NoError(t, err)
+
+	// hash-a and hash-c must be gone.
+	_, err = store.GetByTokenHash(ctx, "hash-a")
+	require.ErrorIs(t, err, ports.ErrSessionNotFound)
+	_, err = store.GetByTokenHash(ctx, "hash-c")
+	require.ErrorIs(t, err, ports.ErrSessionNotFound)
+
+	// Other user's session must be intact.
+	other, err := store.ListByUserID(ctx, "uid-other")
+	require.NoError(t, err)
+	require.Len(t, other, 1)
+}
+
+func TestMemorySessionStore_DeleteAllByUserIDExcept_EmptyKeep_DeletesAll(t *testing.T) {
+	t.Parallel()
+	store := memory.NewSessionStore()
+	ctx := context.Background()
+
+	require.NoError(t, store.Create(ctx, newSession("uid-all", "hash-1")))
+	require.NoError(t, store.Create(ctx, newSession("uid-all", "hash-2")))
+
+	deleted, err := store.DeleteAllByUserIDExcept(ctx, "uid-all", "")
+	require.NoError(t, err)
+	require.Len(t, deleted, 2)
+
+	sessions, err := store.ListByUserID(ctx, "uid-all")
+	require.NoError(t, err)
+	require.Empty(t, sessions)
+}
