@@ -39,6 +39,7 @@ type fixture struct {
 	svc     *auth.AuthService
 	uRepo   *mockUserRepo
 	sRepo   *mockSessionRepo
+	rStore  *mockResetStore
 	jwtMgr  *jwtlib.HS256Manager
 	miniRed *miniredis.Miniredis
 }
@@ -55,15 +56,17 @@ func newFixture(t *testing.T) *fixture {
 
 	uRepo := &mockUserRepo{}
 	sRepo := &mockSessionRepo{}
+	rStore := &mockResetStore{}
 	jwtMgr := jwtlib.NewHS256Manager(testJWTSecret, 15*time.Minute)
 	cache := rediscache.New(redisClient)
 
-	svc := auth.New(uRepo, sRepo, jwtMgr, cache, nil, nil, nil, hooks.NoOp{}, slog.Default(), testRefreshTTL)
+	svc := auth.New(uRepo, sRepo, jwtMgr, cache, rStore, nil, nil, hooks.NoOp{}, slog.Default(), testRefreshTTL)
 
 	return &fixture{
 		svc:     svc,
 		uRepo:   uRepo,
 		sRepo:   sRepo,
+		rStore:  rStore,
 		jwtMgr:  jwtMgr,
 		miniRed: mr,
 	}
@@ -1116,4 +1119,178 @@ func TestChangePassword_SessionCleanupError_StillSucceeds(t *testing.T) {
 
 	require.NoError(t, err, "session cleanup failure must not surface to caller")
 	f.uRepo.AssertExpectations(t)
+}
+
+// ── RequestPasswordReset ──────────────────────────────────────────────────────
+
+func TestRequestPasswordReset_Success(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	user := fakeUser(t)
+
+	f.uRepo.On("GetByEmail", mock.Anything, user.Email).Return(user, nil)
+	f.rStore.On("SaveOTP", mock.Anything, user.ID, user.Email, mock.AnythingOfType("string"), 15*time.Minute).Return(nil)
+
+	_, err := f.svc.RequestPasswordReset(context.Background(), &api.RequestPasswordResetRequest{
+		Email: user.Email,
+	})
+	require.NoError(t, err)
+	f.uRepo.AssertExpectations(t)
+	f.rStore.AssertExpectations(t)
+}
+
+func TestRequestPasswordReset_UnknownEmail_StillReturnsOK(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	f.uRepo.On("GetByEmail", mock.Anything, "unknown@example.com").Return(nil, ports.ErrUserNotFound)
+
+	_, err := f.svc.RequestPasswordReset(context.Background(), &api.RequestPasswordResetRequest{
+		Email: "unknown@example.com",
+	})
+	require.NoError(t, err, "anti-enumeration: must not reveal missing email")
+	f.rStore.AssertNotCalled(t, "SaveOTP")
+}
+
+func TestRequestPasswordReset_InvalidEmail(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	_, err := f.svc.RequestPasswordReset(context.Background(), &api.RequestPasswordResetRequest{
+		Email: "not-an-email",
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
+// ── VerifyResetCode ───────────────────────────────────────────────────────────
+
+func TestVerifyResetCode_Success(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	user := fakeUser(t)
+
+	const plainOTP = "123456"
+	otpHash := token.Hash(plainOTP)
+
+	f.rStore.On("GetOTP", mock.Anything, user.Email).Return(&ports.OTPRecord{
+		UserID: user.ID, OTPHash: otpHash, Attempts: 0,
+	}, nil)
+	f.rStore.On("IncrOTPAttempts", mock.Anything, user.Email).Return(1, nil)
+	f.rStore.On("DeleteOTP", mock.Anything, user.Email).Return(nil)
+	f.rStore.On("SaveResetToken", mock.Anything, mock.AnythingOfType("string"), user.ID, user.Email, 15*time.Minute).Return(nil)
+
+	resp, err := f.svc.VerifyResetCode(context.Background(), &api.VerifyResetCodeRequest{
+		Email: user.Email,
+		Otp:   plainOTP,
+	})
+	require.NoError(t, err)
+	assert.NotEmpty(t, resp.ResetToken)
+	f.rStore.AssertExpectations(t)
+}
+
+func TestVerifyResetCode_WrongOTP(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	user := fakeUser(t)
+
+	f.rStore.On("GetOTP", mock.Anything, user.Email).Return(&ports.OTPRecord{
+		UserID: user.ID, OTPHash: token.Hash("999999"), Attempts: 0,
+	}, nil)
+	f.rStore.On("IncrOTPAttempts", mock.Anything, user.Email).Return(1, nil)
+
+	_, err := f.svc.VerifyResetCode(context.Background(), &api.VerifyResetCodeRequest{
+		Email: user.Email,
+		Otp:   "000000",
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+}
+
+func TestVerifyResetCode_TooManyAttempts(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	user := fakeUser(t)
+
+	f.rStore.On("GetOTP", mock.Anything, user.Email).Return(&ports.OTPRecord{
+		UserID: user.ID, OTPHash: token.Hash("999999"), Attempts: 5,
+	}, nil)
+	f.rStore.On("IncrOTPAttempts", mock.Anything, user.Email).Return(6, nil)
+	f.rStore.On("DeleteOTP", mock.Anything, user.Email).Return(nil)
+
+	_, err := f.svc.VerifyResetCode(context.Background(), &api.VerifyResetCodeRequest{
+		Email: user.Email,
+		Otp:   "000000",
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+}
+
+func TestVerifyResetCode_ExpiredCode(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	user := fakeUser(t)
+
+	f.rStore.On("GetOTP", mock.Anything, user.Email).Return(nil, ports.ErrResetCodeNotFound)
+
+	_, err := f.svc.VerifyResetCode(context.Background(), &api.VerifyResetCodeRequest{
+		Email: user.Email,
+		Otp:   "123456",
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+}
+
+// ── ResetPassword ─────────────────────────────────────────────────────────────
+
+func TestResetPassword_Success(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	user := fakeUser(t)
+
+	plain, hash, err := token.Generate()
+	require.NoError(t, err)
+
+	f.rStore.On("GetResetToken", mock.Anything, hash).Return(&ports.ResetTokenRecord{
+		UserID: user.ID, Email: user.Email,
+	}, nil)
+	f.rStore.On("DeleteResetToken", mock.Anything, hash).Return(nil)
+	f.uRepo.On("UpdatePasswordHash", mock.Anything, user.ID, mock.AnythingOfType("string")).Return(nil)
+	f.sRepo.On("DeleteAllByUserID", mock.Anything, user.ID).Return([]string{"h1", "h2"}, nil)
+
+	_, err = f.svc.ResetPassword(context.Background(), &api.ResetPasswordRequest{
+		ResetToken:  plain,
+		NewPassword: "newpassword1",
+	})
+	require.NoError(t, err)
+	f.rStore.AssertExpectations(t)
+	f.uRepo.AssertExpectations(t)
+	f.sRepo.AssertExpectations(t)
+}
+
+func TestResetPassword_InvalidToken(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	f.rStore.On("GetResetToken", mock.Anything, mock.AnythingOfType("string")).Return(nil, ports.ErrResetTokenNotFound)
+
+	_, err := f.svc.ResetPassword(context.Background(), &api.ResetPasswordRequest{
+		ResetToken:  "invalid-token",
+		NewPassword: "newpassword1",
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+}
+
+func TestResetPassword_WeakPassword(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	_, err := f.svc.ResetPassword(context.Background(), &api.ResetPasswordRequest{
+		ResetToken:  "any-token",
+		NewPassword: "short",
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	f.rStore.AssertNotCalled(t, "GetResetToken")
 }

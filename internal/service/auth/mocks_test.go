@@ -68,6 +68,35 @@ func (m *mockSessionRepo) DeleteAllByUserIDExcept(ctx context.Context, userID, k
 	return hashes, args.Error(1)
 }
 
+type mockResetStore struct{ mock.Mock }
+
+func (m *mockResetStore) SaveOTP(ctx context.Context, userID, email, otpHash string, ttl time.Duration) error {
+	return m.Called(ctx, userID, email, otpHash, ttl).Error(0)
+}
+func (m *mockResetStore) GetOTP(ctx context.Context, email string) (*ports.OTPRecord, error) {
+	args := m.Called(ctx, email)
+	r, _ := args.Get(0).(*ports.OTPRecord)
+	return r, args.Error(1)
+}
+func (m *mockResetStore) IncrOTPAttempts(ctx context.Context, email string) (int, error) {
+	args := m.Called(ctx, email)
+	return args.Int(0), args.Error(1)
+}
+func (m *mockResetStore) DeleteOTP(ctx context.Context, email string) error {
+	return m.Called(ctx, email).Error(0)
+}
+func (m *mockResetStore) SaveResetToken(ctx context.Context, tokenHash, userID, email string, ttl time.Duration) error {
+	return m.Called(ctx, tokenHash, userID, email, ttl).Error(0)
+}
+func (m *mockResetStore) GetResetToken(ctx context.Context, tokenHash string) (*ports.ResetTokenRecord, error) {
+	args := m.Called(ctx, tokenHash)
+	r, _ := args.Get(0).(*ports.ResetTokenRecord)
+	return r, args.Error(1)
+}
+func (m *mockResetStore) DeleteResetToken(ctx context.Context, tokenHash string) error {
+	return m.Called(ctx, tokenHash).Error(0)
+}
+
 // auditSink captures events via a buffered channel. Implements ports.AuditStore.
 type auditSink struct {
 	events chan *ports.AuditEvent
