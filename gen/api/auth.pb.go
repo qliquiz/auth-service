@@ -842,6 +842,102 @@ func (*RevokeSessionResponse) Descriptor() ([]byte, []int) {
 	return file_auth_proto_rawDescGZIP(), []int{16}
 }
 
+type ChangePasswordRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	CurrentPassword string                 `protobuf:"bytes,1,opt,name=current_password,json=currentPassword,proto3" json:"current_password,omitempty"`
+	NewPassword     string                 `protobuf:"bytes,2,opt,name=new_password,json=newPassword,proto3" json:"new_password,omitempty"`
+	RefreshToken    string                 `protobuf:"bytes,3,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"` // session to keep alive; if empty, all sessions are revoked
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ChangePasswordRequest) Reset() {
+	*x = ChangePasswordRequest{}
+	mi := &file_auth_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangePasswordRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangePasswordRequest) ProtoMessage() {}
+
+func (x *ChangePasswordRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_auth_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangePasswordRequest.ProtoReflect.Descriptor instead.
+func (*ChangePasswordRequest) Descriptor() ([]byte, []int) {
+	return file_auth_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ChangePasswordRequest) GetCurrentPassword() string {
+	if x != nil {
+		return x.CurrentPassword
+	}
+	return ""
+}
+
+func (x *ChangePasswordRequest) GetNewPassword() string {
+	if x != nil {
+		return x.NewPassword
+	}
+	return ""
+}
+
+func (x *ChangePasswordRequest) GetRefreshToken() string {
+	if x != nil {
+		return x.RefreshToken
+	}
+	return ""
+}
+
+type ChangePasswordResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChangePasswordResponse) Reset() {
+	*x = ChangePasswordResponse{}
+	mi := &file_auth_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangePasswordResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangePasswordResponse) ProtoMessage() {}
+
+func (x *ChangePasswordResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_auth_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangePasswordResponse.ProtoReflect.Descriptor instead.
+func (*ChangePasswordResponse) Descriptor() ([]byte, []int) {
+	return file_auth_proto_rawDescGZIP(), []int{18}
+}
+
 var File_auth_proto protoreflect.FileDescriptor
 
 const file_auth_proto_rawDesc = "" +
@@ -896,7 +992,12 @@ const file_auth_proto_rawDesc = "" +
 	"\x14RevokeSessionRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\"\x17\n" +
-	"\x15RevokeSessionResponse2\xf2\x05\n" +
+	"\x15RevokeSessionResponse\"\x8a\x01\n" +
+	"\x15ChangePasswordRequest\x12)\n" +
+	"\x10current_password\x18\x01 \x01(\tR\x0fcurrentPassword\x12!\n" +
+	"\fnew_password\x18\x02 \x01(\tR\vnewPassword\x12#\n" +
+	"\rrefresh_token\x18\x03 \x01(\tR\frefreshToken\"\x18\n" +
+	"\x16ChangePasswordResponse2\xe2\x06\n" +
 	"\vAuthService\x12U\n" +
 	"\bRegister\x12\x14.api.RegisterRequest\x1a\x15.api.RegisterResponse\"\x1c\x82\xd3\xe4\x93\x02\x16:\x01*\"\x11/v1/auth/register\x12I\n" +
 	"\x05Login\x12\x11.api.LoginRequest\x1a\x12.api.LoginResponse\"\x19\x82\xd3\xe4\x93\x02\x13:\x01*\"\x0e/v1/auth/login\x12d\n" +
@@ -905,7 +1006,8 @@ const file_auth_proto_rawDesc = "" +
 	"\x06Logout\x12\x12.api.LogoutRequest\x1a\x13.api.LogoutResponse\"\x1a\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/v1/auth/logout\x12Z\n" +
 	"\tLogoutAll\x12\x15.api.LogoutAllRequest\x1a\x16.api.LogoutAllResponse\"\x1e\x82\xd3\xe4\x93\x02\x18:\x01*\"\x13/v1/auth/logout-all\x12^\n" +
 	"\fListSessions\x12\x18.api.ListSessionsRequest\x1a\x19.api.ListSessionsResponse\"\x19\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/auth/sessions\x12n\n" +
-	"\rRevokeSession\x12\x19.api.RevokeSessionRequest\x1a\x1a.api.RevokeSessionResponse\"&\x82\xd3\xe4\x93\x02 *\x1e/v1/auth/sessions/{session_id}B\x1aZ\x18auth-service/gen/api;apib\x06proto3"
+	"\rRevokeSession\x12\x19.api.RevokeSessionRequest\x1a\x1a.api.RevokeSessionResponse\"&\x82\xd3\xe4\x93\x02 *\x1e/v1/auth/sessions/{session_id}\x12n\n" +
+	"\x0eChangePassword\x12\x1a.api.ChangePasswordRequest\x1a\x1b.api.ChangePasswordResponse\"#\x82\xd3\xe4\x93\x02\x1d:\x01*\"\x18/v1/auth/change-passwordB\x1aZ\x18auth-service/gen/api;apib\x06proto3"
 
 var (
 	file_auth_proto_rawDescOnce sync.Once
@@ -919,25 +1021,27 @@ func file_auth_proto_rawDescGZIP() []byte {
 	return file_auth_proto_rawDescData
 }
 
-var file_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_auth_proto_goTypes = []any{
-	(*RegisterRequest)(nil),       // 0: api.RegisterRequest
-	(*RegisterResponse)(nil),      // 1: api.RegisterResponse
-	(*LoginRequest)(nil),          // 2: api.LoginRequest
-	(*LoginResponse)(nil),         // 3: api.LoginResponse
-	(*ValidateTokenRequest)(nil),  // 4: api.ValidateTokenRequest
-	(*ValidateTokenResponse)(nil), // 5: api.ValidateTokenResponse
-	(*RefreshTokenRequest)(nil),   // 6: api.RefreshTokenRequest
-	(*RefreshTokenResponse)(nil),  // 7: api.RefreshTokenResponse
-	(*LogoutRequest)(nil),         // 8: api.LogoutRequest
-	(*LogoutResponse)(nil),        // 9: api.LogoutResponse
-	(*LogoutAllRequest)(nil),      // 10: api.LogoutAllRequest
-	(*LogoutAllResponse)(nil),     // 11: api.LogoutAllResponse
-	(*SessionInfo)(nil),           // 12: api.SessionInfo
-	(*ListSessionsRequest)(nil),   // 13: api.ListSessionsRequest
-	(*ListSessionsResponse)(nil),  // 14: api.ListSessionsResponse
-	(*RevokeSessionRequest)(nil),  // 15: api.RevokeSessionRequest
-	(*RevokeSessionResponse)(nil), // 16: api.RevokeSessionResponse
+	(*RegisterRequest)(nil),        // 0: api.RegisterRequest
+	(*RegisterResponse)(nil),       // 1: api.RegisterResponse
+	(*LoginRequest)(nil),           // 2: api.LoginRequest
+	(*LoginResponse)(nil),          // 3: api.LoginResponse
+	(*ValidateTokenRequest)(nil),   // 4: api.ValidateTokenRequest
+	(*ValidateTokenResponse)(nil),  // 5: api.ValidateTokenResponse
+	(*RefreshTokenRequest)(nil),    // 6: api.RefreshTokenRequest
+	(*RefreshTokenResponse)(nil),   // 7: api.RefreshTokenResponse
+	(*LogoutRequest)(nil),          // 8: api.LogoutRequest
+	(*LogoutResponse)(nil),         // 9: api.LogoutResponse
+	(*LogoutAllRequest)(nil),       // 10: api.LogoutAllRequest
+	(*LogoutAllResponse)(nil),      // 11: api.LogoutAllResponse
+	(*SessionInfo)(nil),            // 12: api.SessionInfo
+	(*ListSessionsRequest)(nil),    // 13: api.ListSessionsRequest
+	(*ListSessionsResponse)(nil),   // 14: api.ListSessionsResponse
+	(*RevokeSessionRequest)(nil),   // 15: api.RevokeSessionRequest
+	(*RevokeSessionResponse)(nil),  // 16: api.RevokeSessionResponse
+	(*ChangePasswordRequest)(nil),  // 17: api.ChangePasswordRequest
+	(*ChangePasswordResponse)(nil), // 18: api.ChangePasswordResponse
 }
 var file_auth_proto_depIdxs = []int32{
 	12, // 0: api.ListSessionsResponse.sessions:type_name -> api.SessionInfo
@@ -949,16 +1053,18 @@ var file_auth_proto_depIdxs = []int32{
 	10, // 6: api.AuthService.LogoutAll:input_type -> api.LogoutAllRequest
 	13, // 7: api.AuthService.ListSessions:input_type -> api.ListSessionsRequest
 	15, // 8: api.AuthService.RevokeSession:input_type -> api.RevokeSessionRequest
-	1,  // 9: api.AuthService.Register:output_type -> api.RegisterResponse
-	3,  // 10: api.AuthService.Login:output_type -> api.LoginResponse
-	5,  // 11: api.AuthService.ValidateToken:output_type -> api.ValidateTokenResponse
-	7,  // 12: api.AuthService.RefreshToken:output_type -> api.RefreshTokenResponse
-	9,  // 13: api.AuthService.Logout:output_type -> api.LogoutResponse
-	11, // 14: api.AuthService.LogoutAll:output_type -> api.LogoutAllResponse
-	14, // 15: api.AuthService.ListSessions:output_type -> api.ListSessionsResponse
-	16, // 16: api.AuthService.RevokeSession:output_type -> api.RevokeSessionResponse
-	9,  // [9:17] is the sub-list for method output_type
-	1,  // [1:9] is the sub-list for method input_type
+	17, // 9: api.AuthService.ChangePassword:input_type -> api.ChangePasswordRequest
+	1,  // 10: api.AuthService.Register:output_type -> api.RegisterResponse
+	3,  // 11: api.AuthService.Login:output_type -> api.LoginResponse
+	5,  // 12: api.AuthService.ValidateToken:output_type -> api.ValidateTokenResponse
+	7,  // 13: api.AuthService.RefreshToken:output_type -> api.RefreshTokenResponse
+	9,  // 14: api.AuthService.Logout:output_type -> api.LogoutResponse
+	11, // 15: api.AuthService.LogoutAll:output_type -> api.LogoutAllResponse
+	14, // 16: api.AuthService.ListSessions:output_type -> api.ListSessionsResponse
+	16, // 17: api.AuthService.RevokeSession:output_type -> api.RevokeSessionResponse
+	18, // 18: api.AuthService.ChangePassword:output_type -> api.ChangePasswordResponse
+	10, // [10:19] is the sub-list for method output_type
+	1,  // [1:10] is the sub-list for method input_type
 	1,  // [1:1] is the sub-list for extension type_name
 	1,  // [1:1] is the sub-list for extension extendee
 	0,  // [0:1] is the sub-list for field type_name
@@ -975,7 +1081,7 @@ func file_auth_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_auth_proto_rawDesc), len(file_auth_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   17,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
