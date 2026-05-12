@@ -18,6 +18,7 @@ type UserStore interface {
 	Create(ctx context.Context, email, passwordHash string) (*models.User, error)
 	GetByEmail(ctx context.Context, email string) (*models.User, error)
 	GetByID(ctx context.Context, id string) (*models.User, error)
+	UpdatePasswordHash(ctx context.Context, userID, passwordHash string) error
 }
 
 // SessionStore manages refresh-token sessions.
@@ -28,5 +29,9 @@ type SessionStore interface {
 	DeleteByTokenHash(ctx context.Context, tokenHash string) error
 	RotateToken(ctx context.Context, oldHash string, newSession *models.Session) error
 	DeleteAllByUserID(ctx context.Context, userID string) (tokenHashes []string, err error)
+	// DeleteAllByUserIDExcept deletes all sessions for userID except the one matching
+	// keepTokenHash, and returns the hashes of deleted sessions for Redis cleanup.
+	// If keepTokenHash is empty, all sessions are deleted.
+	DeleteAllByUserIDExcept(ctx context.Context, userID, keepTokenHash string) ([]string, error)
 	ListByUserID(ctx context.Context, userID string) ([]*models.Session, error)
 }

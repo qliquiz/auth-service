@@ -28,6 +28,9 @@ func (m *mockUserRepo) GetByID(ctx context.Context, id string) (*models.User, er
 	u, _ := args.Get(0).(*models.User)
 	return u, args.Error(1)
 }
+func (m *mockUserRepo) UpdatePasswordHash(ctx context.Context, userID, passwordHash string) error {
+	return m.Called(ctx, userID, passwordHash).Error(0)
+}
 
 type mockSessionRepo struct{ mock.Mock }
 
@@ -58,6 +61,11 @@ func (m *mockSessionRepo) ListByUserID(ctx context.Context, userID string) ([]*m
 	args := m.Called(ctx, userID)
 	s, _ := args.Get(0).([]*models.Session)
 	return s, args.Error(1)
+}
+func (m *mockSessionRepo) DeleteAllByUserIDExcept(ctx context.Context, userID, keepTokenHash string) ([]string, error) {
+	args := m.Called(ctx, userID, keepTokenHash)
+	hashes, _ := args.Get(0).([]string)
+	return hashes, args.Error(1)
 }
 
 // auditSink captures events via a buffered channel. Implements ports.AuditStore.

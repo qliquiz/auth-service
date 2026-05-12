@@ -72,3 +72,15 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*models.User, 
 	}
 	return &u, nil
 }
+
+func (r *UserRepository) UpdatePasswordHash(ctx context.Context, userID, passwordHash string) error {
+	const q = `UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1`
+	tag, err := r.db.Exec(ctx, q, userID, passwordHash)
+	if err != nil {
+		return fmt.Errorf("update password hash: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ports.ErrUserNotFound
+	}
+	return nil
+}

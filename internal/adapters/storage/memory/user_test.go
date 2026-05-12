@@ -70,3 +70,28 @@ func TestMemoryUserStore_GetReturnsCopy(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "carol@example.com", u2.Email, "store must return independent copies")
 }
+
+func TestMemoryUserStore_UpdatePasswordHash(t *testing.T) {
+	t.Parallel()
+	store := memory.NewUserStore()
+	ctx := context.Background()
+
+	user, err := store.Create(ctx, "dave@example.com", "oldhash")
+	require.NoError(t, err)
+
+	err = store.UpdatePasswordHash(ctx, user.ID, "newhash")
+	require.NoError(t, err)
+
+	got, err := store.GetByID(ctx, user.ID)
+	require.NoError(t, err)
+	require.Equal(t, "newhash", got.PasswordHash)
+	require.True(t, got.UpdatedAt.After(user.UpdatedAt) || got.UpdatedAt.Equal(user.UpdatedAt),
+		"UpdatedAt must not go backwards")
+}
+
+func TestMemoryUserStore_UpdatePasswordHash_NotFound(t *testing.T) {
+	t.Parallel()
+	store := memory.NewUserStore()
+	err := store.UpdatePasswordHash(context.Background(), "no-such-id", "hash")
+	require.ErrorIs(t, err, ports.ErrUserNotFound)
+}

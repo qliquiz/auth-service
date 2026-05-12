@@ -385,3 +385,121 @@ func TestE2E_RevokeSession(t *testing.T) {
 	})
 	require.NoError(t, err)
 }
+
+// ── ChangePassword ────────────────────────────────────────────────────────────
+
+func TestE2E_ChangePassword_Success(t *testing.T) {
+	t.Parallel()
+	srv := newTestServer(t)
+	ctx := context.Background()
+
+	_, err := srv.client.Register(ctx, &api.RegisterRequest{
+		Email:    "changepass@example.com",
+		Password: "oldpassword1",
+	})
+	require.NoError(t, err)
+
+	login1, err := srv.client.Login(ctx, &api.LoginRequest{
+		Email:    "changepass@example.com",
+		Password: "oldpassword1",
+		DeviceId: "device-1",
+	})
+	require.NoError(t, err)
+
+	login2, err := srv.client.Login(ctx, &api.LoginRequest{
+		Email:    "changepass@example.com",
+		Password: "oldpassword1",
+		DeviceId: "device-2",
+	})
+	require.NoError(t, err)
+
+	_, err = srv.client.ChangePassword(srv.authCtx(t, login1.AccessToken), &api.ChangePasswordRequest{
+		CurrentPassword: "oldpassword1",
+		NewPassword:     "newpassword1",
+		RefreshToken:    login1.RefreshToken,
+	})
+	require.NoError(t, err)
+
+	// device-2's refresh token must be revoked.
+	_, err = srv.client.RefreshToken(ctx, &api.RefreshTokenRequest{
+		RefreshToken: login2.RefreshToken,
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err), "device-2 session must be revoked")
+
+	// device-1's refresh token must still be valid.
+	_, err = srv.client.RefreshToken(ctx, &api.RefreshTokenRequest{
+		RefreshToken: login1.RefreshToken,
+	})
+	require.NoError(t, err, "device-1 session must remain active")
+
+	// Old password must no longer work.
+	_, err = srv.client.Login(ctx, &api.LoginRequest{
+		Email:    "changepass@example.com",
+		Password: "oldpassword1",
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err), "old password must be rejected")
+
+	// New password must work.
+	_, err = srv.client.Login(ctx, &api.LoginRequest{
+		Email:    "changepass@example.com",
+		Password: "newpassword1",
+	})
+	require.NoError(t, err, "new password must be accepted")
+}
+
+func TestE2E_ChangePassword_WrongCurrentPassword(t *testing.T) {
+	t.Parallel()
+	srv := newTestServer(t)
+	ctx := context.Background()
+
+	_, err := srv.client.Register(ctx, &api.RegisterRequest{
+		Email:    "wrongcurr@example.com",
+		Password: "oldpassword1",
+	})
+	require.NoError(t, err)
+
+	login, err := srv.client.Login(ctx, &api.LoginRequest{
+		Email:    "wrongcurr@example.com",
+		Password: "oldpassword1",
+	})
+	require.NoError(t, err)
+
+	_, err = srv.client.ChangePassword(srv.authCtx(t, login.AccessToken), &api.ChangePasswordRequest{
+		CurrentPassword: "thisiswrong1",
+		NewPassword:     "newpassword1",
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+}
+
+func TestE2E_ChangePassword_NoRefreshToken_RevokesAll(t *testing.T) {
+	t.Parallel()
+	srv := newTestServer(t)
+	ctx := context.Background()
+
+	_, err := srv.client.Register(ctx, &api.RegisterRequest{
+		Email:    "notoken@example.com",
+		Password: "oldpassword1",
+	})
+	require.NoError(t, err)
+
+	login, err := srv.client.Login(ctx, &api.LoginRequest{
+		Email:    "notoken@example.com",
+		Password: "oldpassword1",
+	})
+	require.NoError(t, err)
+
+	_, err = srv.client.ChangePassword(srv.authCtx(t, login.AccessToken), &api.ChangePasswordRequest{
+		CurrentPassword: "oldpassword1",
+		NewPassword:     "newpassword1",
+	})
+	require.NoError(t, err)
+
+	_, err = srv.client.RefreshToken(ctx, &api.RefreshTokenRequest{
+		RefreshToken: login.RefreshToken,
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err), "all sessions must be revoked when no refresh token provided")
+}

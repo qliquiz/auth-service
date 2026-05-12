@@ -1003,3 +1003,117 @@ func TestLogin_ExpiredRefreshTTL_NotCached(t *testing.T) {
 	tokenHash := token.Hash(resp.RefreshToken)
 	assert.False(t, mr.Exists("refresh:"+tokenHash), "session with non-positive TTL must not be cached")
 }
+
+// ── ChangePassword ────────────────────────────────────────────────────────────
+
+func TestChangePassword_Success(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	user := fakeUser(t)
+	ctx := f.ctxWithBearerToken(t, user.ID, user.Email)
+
+	plain, hashed, err := token.Generate()
+	require.NoError(t, err)
+
+	f.uRepo.On("GetByID", mock.Anything, user.ID).Return(user, nil)
+	f.uRepo.On("UpdatePasswordHash", mock.Anything, user.ID, mock.AnythingOfType("string")).Return(nil)
+	f.sRepo.On("DeleteAllByUserIDExcept", mock.Anything, user.ID, hashed).Return([]string{"old-hash-1"}, nil)
+
+	_, err = f.svc.ChangePassword(ctx, &api.ChangePasswordRequest{
+		CurrentPassword: "password123",
+		NewPassword:     "newpassword1",
+		RefreshToken:    plain,
+	})
+
+	require.NoError(t, err)
+	f.uRepo.AssertExpectations(t)
+	f.sRepo.AssertExpectations(t)
+}
+
+func TestChangePassword_Unauthenticated_NoToken(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	_, err := f.svc.ChangePassword(context.Background(), &api.ChangePasswordRequest{
+		CurrentPassword: "password123",
+		NewPassword:     "newpassword1",
+	})
+
+	require.Error(t, err)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+	f.uRepo.AssertNotCalled(t, "GetByID")
+}
+
+func TestChangePassword_WeakNewPassword(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	user := fakeUser(t)
+	ctx := f.ctxWithBearerToken(t, user.ID, user.Email)
+
+	_, err := f.svc.ChangePassword(ctx, &api.ChangePasswordRequest{
+		CurrentPassword: "password123",
+		NewPassword:     "short",
+	})
+
+	require.Error(t, err)
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	f.uRepo.AssertNotCalled(t, "GetByID")
+}
+
+func TestChangePassword_WrongCurrentPassword(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	user := fakeUser(t)
+	ctx := f.ctxWithBearerToken(t, user.ID, user.Email)
+
+	f.uRepo.On("GetByID", mock.Anything, user.ID).Return(user, nil)
+
+	_, err := f.svc.ChangePassword(ctx, &api.ChangePasswordRequest{
+		CurrentPassword: "wrongpassword1",
+		NewPassword:     "newpassword1",
+	})
+
+	require.Error(t, err)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+	f.uRepo.AssertNotCalled(t, "UpdatePasswordHash")
+}
+
+func TestChangePassword_UpdateHashError_ReturnsInternal(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	user := fakeUser(t)
+	ctx := f.ctxWithBearerToken(t, user.ID, user.Email)
+
+	f.uRepo.On("GetByID", mock.Anything, user.ID).Return(user, nil)
+	f.uRepo.On("UpdatePasswordHash", mock.Anything, user.ID, mock.AnythingOfType("string")).
+		Return(fmt.Errorf("db error"))
+
+	_, err := f.svc.ChangePassword(ctx, &api.ChangePasswordRequest{
+		CurrentPassword: "password123",
+		NewPassword:     "newpassword1",
+	})
+
+	require.Error(t, err)
+	assert.Equal(t, codes.Internal, status.Code(err))
+	f.sRepo.AssertNotCalled(t, "DeleteAllByUserIDExcept")
+}
+
+func TestChangePassword_SessionCleanupError_StillSucceeds(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	user := fakeUser(t)
+	ctx := f.ctxWithBearerToken(t, user.ID, user.Email)
+
+	f.uRepo.On("GetByID", mock.Anything, user.ID).Return(user, nil)
+	f.uRepo.On("UpdatePasswordHash", mock.Anything, user.ID, mock.AnythingOfType("string")).Return(nil)
+	f.sRepo.On("DeleteAllByUserIDExcept", mock.Anything, user.ID, "").
+		Return(([]string)(nil), fmt.Errorf("redis unavailable"))
+
+	_, err := f.svc.ChangePassword(ctx, &api.ChangePasswordRequest{
+		CurrentPassword: "password123",
+		NewPassword:     "newpassword1",
+	})
+
+	require.NoError(t, err, "session cleanup failure must not surface to caller")
+	f.uRepo.AssertExpectations(t)
+}

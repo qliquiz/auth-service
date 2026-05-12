@@ -114,6 +114,20 @@ func (s *SessionStore) DeleteAllByUserID(_ context.Context, userID string) ([]st
 	return hashes, nil
 }
 
+func (s *SessionStore) DeleteAllByUserIDExcept(_ context.Context, userID, keepTokenHash string) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var hashes []string
+	for id, sess := range s.byID {
+		if sess.UserID == userID && sess.TokenHash != keepTokenHash {
+			hashes = append(hashes, sess.TokenHash)
+			delete(s.byHash, sess.TokenHash)
+			delete(s.byID, id)
+		}
+	}
+	return hashes, nil
+}
+
 func (s *SessionStore) ListByUserID(_ context.Context, userID string) ([]*models.Session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

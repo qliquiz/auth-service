@@ -146,18 +146,20 @@ Failures return `codes.InvalidArgument`.
 
 ## API Contracts
 
-| Method        | HTTP                                    | Auth       | Notes                                                              |
-|---------------|-----------------------------------------|------------|--------------------------------------------------------------------|
-| Register      | `POST /v1/auth/register`                | —          |                                                                    |
-| Login         | `POST /v1/auth/login`                   | —          | Returns access + refresh tokens. Optional `device_id` field.       |
-| ValidateToken | `POST /v1/auth/validate`                | —          | Stateless JWT check; for inter-service use.                        |
-| RefreshToken  | `POST /v1/auth/refresh`                 | —          | Rotates both tokens. Old refresh token is immediately invalidated. |
-| Logout        | `POST /v1/auth/logout`                  | —          | Identified by `refresh_token` in body.                             |
-| LogoutAll     | `POST /v1/auth/logout-all`              | Bearer JWT | Revokes all sessions for the user.                                 |
-| ListSessions  | `GET /v1/auth/sessions`                 | Bearer JWT | Returns all active sessions with device info.                      |
-| RevokeSession | `DELETE /v1/auth/sessions/{session_id}` | Bearer JWT | Revokes a specific session.                                        |
+| Method         | HTTP                                    | Auth       | Notes                                                                                                                                          |
+|----------------|-----------------------------------------|------------|------------------------------------------------------------------------------------------------------------------------------------------------|
+| Register       | `POST /v1/auth/register`                | —          |                                                                                                                                                |
+| Login          | `POST /v1/auth/login`                   | —          | Returns access + refresh tokens. Optional `device_id` field.                                                                                   |
+| ValidateToken  | `POST /v1/auth/validate`                | —          | Stateless JWT check; for inter-service use.                                                                                                    |
+| RefreshToken   | `POST /v1/auth/refresh`                 | —          | Rotates both tokens. Old refresh token is immediately invalidated.                                                                             |
+| Logout         | `POST /v1/auth/logout`                  | —          | Identified by `refresh_token` in body.                                                                                                         |
+| LogoutAll      | `POST /v1/auth/logout-all`              | Bearer JWT | Revokes all sessions for the user.                                                                                                             |
+| ListSessions   | `GET /v1/auth/sessions`                 | Bearer JWT | Returns all active sessions with device info.                                                                                                  |
+| RevokeSession  | `DELETE /v1/auth/sessions/{session_id}` | Bearer JWT | Revokes a specific session.                                                                                                                    |
+| ChangePassword | `POST /v1/auth/change-password`         | Bearer JWT | Verifies current password, updates hash, revokes all sessions except the one identified by `refresh_token` (if omitted, all sessions revoked). |
 
-Protected endpoints (`LogoutAll`, `ListSessions`, `RevokeSession`) require `Authorization: Bearer <access_token>` —
+Protected endpoints (`LogoutAll`, `ListSessions`, `RevokeSession`, `ChangePassword`) require
+`Authorization: Bearer <access_token>` —
 works identically for HTTP and gRPC (via metadata).
 
 ## Database Schema
@@ -256,10 +258,10 @@ To add custom business logic (e.g. send a welcome email on registration):
 type MyHook struct{ mailer Mailer }
 
 func (h *MyHook) OnEvent(ctx context.Context, e ports.HookEvent) error {
-    if e.Type == ports.AuditEventRegister {
-        return h.mailer.SendWelcome(ctx, e.UserEmail)
-    }
-    return nil
+if e.Type == ports.AuditEventRegister {
+return h.mailer.SendWelcome(ctx, e.UserEmail)
+}
+return nil
 }
 ```
 
@@ -276,14 +278,14 @@ implementations with no external dependencies. Use them in:
 
 ```go
 svc := auth.New(
-    memory.NewUserStore(),
-    memory.NewSessionStore(),
-    jwtlib.NewHS256Manager(secret, 15*time.Minute),
-    memcache.New(),
-    nil, // audit disabled
-    nil,   // brute-force disabled
-    hooks.NoOp{},
-    logger,
-    24*time.Hour,
+memory.NewUserStore(),
+memory.NewSessionStore(),
+jwtlib.NewHS256Manager(secret, 15*time.Minute),
+memcache.New(),
+nil, // audit disabled
+nil,   // brute-force disabled
+hooks.NoOp{},
+logger,
+24*time.Hour,
 )
 ```

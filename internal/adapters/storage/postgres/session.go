@@ -129,6 +129,35 @@ func (r *SessionRepository) DeleteAllByUserID(ctx context.Context, userID string
 	return hashes, rows.Err()
 }
 
+func (r *SessionRepository) DeleteAllByUserIDExcept(ctx context.Context, userID, keepTokenHash string) ([]string, error) {
+	var (
+		rows pgx.Rows
+		err  error
+	)
+	if keepTokenHash == "" {
+		rows, err = r.db.Query(ctx,
+			`DELETE FROM sessions WHERE user_id = $1 RETURNING token_hash`, userID)
+	} else {
+		rows, err = r.db.Query(ctx,
+			`DELETE FROM sessions WHERE user_id = $1 AND token_hash != $2 RETURNING token_hash`,
+			userID, keepTokenHash)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("delete sessions except one: %w", err)
+	}
+	defer rows.Close()
+
+	var hashes []string
+	for rows.Next() {
+		var h string
+		if err = rows.Scan(&h); err != nil {
+			return nil, fmt.Errorf("scan token hash: %w", err)
+		}
+		hashes = append(hashes, h)
+	}
+	return hashes, rows.Err()
+}
+
 func (r *SessionRepository) ListByUserID(ctx context.Context, userID string) ([]*models.Session, error) {
 	const q = `
 		SELECT id, user_id, token_hash, device_id, user_agent, ip_address, expires_at, last_used_at, created_at

@@ -66,3 +66,15 @@ func (s *UserStore) GetByID(_ context.Context, id string) (*models.User, error) 
 	cp := *u
 	return &cp, nil
 }
+
+func (s *UserStore) UpdatePasswordHash(_ context.Context, userID, passwordHash string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u, ok := s.byID[userID]
+	if !ok {
+		return ports.ErrUserNotFound
+	}
+	u.PasswordHash = passwordHash
+	u.UpdatedAt = time.Now()
+	return nil
+}

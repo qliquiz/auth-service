@@ -16,6 +16,39 @@
     "application/json"
   ],
   "paths": {
+    "/v1/auth/change-password": {
+      "post": {
+        "summary": "Change password for the authenticated user. Requires Authorization header.\nRevokes all sessions except the one identified by refresh_token.",
+        "operationId": "AuthService_ChangePassword",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/apiChangePasswordResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/apiChangePasswordRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
     "/v1/auth/login": {
       "post": {
         "operationId": "AuthService_Login",
@@ -267,6 +300,24 @@
     }
   },
   "definitions": {
+    "apiChangePasswordRequest": {
+      "type": "object",
+      "properties": {
+        "currentPassword": {
+          "type": "string"
+        },
+        "newPassword": {
+          "type": "string"
+        },
+        "refreshToken": {
+          "type": "string",
+          "title": "session to keep alive; if empty, all sessions are revoked"
+        }
+      }
+    },
+    "apiChangePasswordResponse": {
+      "type": "object"
+    },
     "apiListSessionsResponse": {
       "type": "object",
       "properties": {

@@ -65,6 +65,15 @@ service AuthService {
       delete: "/v1/auth/sessions/{session_id}"
     };
   };
+
+  // Change password for the authenticated user. Requires Authorization header.
+  // Revokes all sessions except the one identified by refresh_token.
+  rpc ChangePassword(ChangePasswordRequest) returns (ChangePasswordResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth/change-password"
+      body: "*"
+    };
+  };
 }
 
 // ── Register ─────────────────────────────────────────────────────────────────
@@ -153,3 +162,13 @@ message RevokeSessionRequest {
 }
 
 message RevokeSessionResponse {}
+
+// ── ChangePassword ────────────────────────────────────────────────────────────
+
+message ChangePasswordRequest {
+  string current_password = 1;
+  string new_password = 2;
+  string refresh_token = 3; // session to keep alive; if empty, all sessions are revoked
+}
+
+message ChangePasswordResponse {}
