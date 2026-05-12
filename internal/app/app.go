@@ -55,6 +55,7 @@ func New(
 	}
 
 	cache := rediscache.New(redisClient)
+	resetStore := rediscache.NewResetCache(redisClient)
 	guard := bruteforce.New(
 		redisClient,
 		secCfg.BruteForce.MaxAttempts,
@@ -62,7 +63,7 @@ func New(
 		secCfg.BruteForce.LockoutTTL,
 	)
 
-	service := auth.New(uRepo, sRepo, tokenMgr, cache, aRepo, guard, hooks.NoOp{}, log, jwtCfg.RefreshTTL)
+	service := auth.New(uRepo, sRepo, tokenMgr, cache, resetStore, aRepo, guard, hooks.NoOp{}, log, jwtCfg.RefreshTTL)
 
 	globalLimiter := ratelimit.New(redisClient, secCfg.RateLimit.GlobalRPM, time.Minute)
 	loginLimiter := ratelimit.New(redisClient, secCfg.RateLimit.LoginRPM, time.Minute)

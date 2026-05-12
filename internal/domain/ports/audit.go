@@ -13,7 +13,9 @@ const (
 	AuditEventLogoutAll      AuditEventType = "user.logout_all"
 	AuditEventTokenRefresh   AuditEventType = "token.refresh"
 	AuditEventSessionRevoke  AuditEventType = "session.revoke"
-	AuditEventPasswordChange AuditEventType = "user.password_change"
+	AuditEventPasswordChange       AuditEventType = "user.password_change"
+	AuditEventPasswordResetRequest AuditEventType = "user.password_reset_request"
+	AuditEventPasswordReset        AuditEventType = "user.password_reset"
 )
 
 type AuditEvent struct {

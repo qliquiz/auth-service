@@ -19,15 +19,18 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AuthService_Register_FullMethodName       = "/api.AuthService/Register"
-	AuthService_Login_FullMethodName          = "/api.AuthService/Login"
-	AuthService_ValidateToken_FullMethodName  = "/api.AuthService/ValidateToken"
-	AuthService_RefreshToken_FullMethodName   = "/api.AuthService/RefreshToken"
-	AuthService_Logout_FullMethodName         = "/api.AuthService/Logout"
-	AuthService_LogoutAll_FullMethodName      = "/api.AuthService/LogoutAll"
-	AuthService_ListSessions_FullMethodName   = "/api.AuthService/ListSessions"
-	AuthService_RevokeSession_FullMethodName  = "/api.AuthService/RevokeSession"
-	AuthService_ChangePassword_FullMethodName = "/api.AuthService/ChangePassword"
+	AuthService_Register_FullMethodName             = "/api.AuthService/Register"
+	AuthService_Login_FullMethodName                = "/api.AuthService/Login"
+	AuthService_ValidateToken_FullMethodName        = "/api.AuthService/ValidateToken"
+	AuthService_RefreshToken_FullMethodName         = "/api.AuthService/RefreshToken"
+	AuthService_Logout_FullMethodName               = "/api.AuthService/Logout"
+	AuthService_LogoutAll_FullMethodName            = "/api.AuthService/LogoutAll"
+	AuthService_ListSessions_FullMethodName         = "/api.AuthService/ListSessions"
+	AuthService_RevokeSession_FullMethodName        = "/api.AuthService/RevokeSession"
+	AuthService_ChangePassword_FullMethodName       = "/api.AuthService/ChangePassword"
+	AuthService_RequestPasswordReset_FullMethodName = "/api.AuthService/RequestPasswordReset"
+	AuthService_VerifyResetCode_FullMethodName      = "/api.AuthService/VerifyResetCode"
+	AuthService_ResetPassword_FullMethodName        = "/api.AuthService/ResetPassword"
 )
 
 // AuthServiceClient is the client API for AuthService service.
@@ -50,6 +53,12 @@ type AuthServiceClient interface {
 	// Change password for the authenticated user. Requires Authorization header.
 	// Revokes all sessions except the one identified by refresh_token.
 	ChangePassword(ctx context.Context, in *ChangePasswordRequest, opts ...grpc.CallOption) (*ChangePasswordResponse, error)
+	// Request a password reset OTP. Always returns success (anti-enumeration).
+	RequestPasswordReset(ctx context.Context, in *RequestPasswordResetRequest, opts ...grpc.CallOption) (*RequestPasswordResetResponse, error)
+	// Verify OTP code. Returns a short-lived reset_token on success.
+	VerifyResetCode(ctx context.Context, in *VerifyResetCodeRequest, opts ...grpc.CallOption) (*VerifyResetCodeResponse, error)
+	// Set a new password using the reset_token from VerifyResetCode. Revokes all sessions.
+	ResetPassword(ctx context.Context, in *ResetPasswordRequest, opts ...grpc.CallOption) (*ResetPasswordResponse, error)
 }
 
 type authServiceClient struct {
@@ -150,6 +159,36 @@ func (c *authServiceClient) ChangePassword(ctx context.Context, in *ChangePasswo
 	return out, nil
 }
 
+func (c *authServiceClient) RequestPasswordReset(ctx context.Context, in *RequestPasswordResetRequest, opts ...grpc.CallOption) (*RequestPasswordResetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RequestPasswordResetResponse)
+	err := c.cc.Invoke(ctx, AuthService_RequestPasswordReset_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *authServiceClient) VerifyResetCode(ctx context.Context, in *VerifyResetCodeRequest, opts ...grpc.CallOption) (*VerifyResetCodeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VerifyResetCodeResponse)
+	err := c.cc.Invoke(ctx, AuthService_VerifyResetCode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *authServiceClient) ResetPassword(ctx context.Context, in *ResetPasswordRequest, opts ...grpc.CallOption) (*ResetPasswordResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResetPasswordResponse)
+	err := c.cc.Invoke(ctx, AuthService_ResetPassword_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AuthServiceServer is the server API for AuthService service.
 // All implementations must embed UnimplementedAuthServiceServer
 // for forward compatibility.
@@ -170,6 +209,12 @@ type AuthServiceServer interface {
 	// Change password for the authenticated user. Requires Authorization header.
 	// Revokes all sessions except the one identified by refresh_token.
 	ChangePassword(context.Context, *ChangePasswordRequest) (*ChangePasswordResponse, error)
+	// Request a password reset OTP. Always returns success (anti-enumeration).
+	RequestPasswordReset(context.Context, *RequestPasswordResetRequest) (*RequestPasswordResetResponse, error)
+	// Verify OTP code. Returns a short-lived reset_token on success.
+	VerifyResetCode(context.Context, *VerifyResetCodeRequest) (*VerifyResetCodeResponse, error)
+	// Set a new password using the reset_token from VerifyResetCode. Revokes all sessions.
+	ResetPassword(context.Context, *ResetPasswordRequest) (*ResetPasswordResponse, error)
 	mustEmbedUnimplementedAuthServiceServer()
 }
 
@@ -206,6 +251,15 @@ func (UnimplementedAuthServiceServer) RevokeSession(context.Context, *RevokeSess
 }
 func (UnimplementedAuthServiceServer) ChangePassword(context.Context, *ChangePasswordRequest) (*ChangePasswordResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ChangePassword not implemented")
+}
+func (UnimplementedAuthServiceServer) RequestPasswordReset(context.Context, *RequestPasswordResetRequest) (*RequestPasswordResetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RequestPasswordReset not implemented")
+}
+func (UnimplementedAuthServiceServer) VerifyResetCode(context.Context, *VerifyResetCodeRequest) (*VerifyResetCodeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method VerifyResetCode not implemented")
+}
+func (UnimplementedAuthServiceServer) ResetPassword(context.Context, *ResetPasswordRequest) (*ResetPasswordResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ResetPassword not implemented")
 }
 func (UnimplementedAuthServiceServer) mustEmbedUnimplementedAuthServiceServer() {}
 func (UnimplementedAuthServiceServer) testEmbeddedByValue()                     {}
@@ -390,6 +444,60 @@ func _AuthService_ChangePassword_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AuthService_RequestPasswordReset_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RequestPasswordResetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).RequestPasswordReset(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthService_RequestPasswordReset_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthServiceServer).RequestPasswordReset(ctx, req.(*RequestPasswordResetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuthService_VerifyResetCode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VerifyResetCodeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).VerifyResetCode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthService_VerifyResetCode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthServiceServer).VerifyResetCode(ctx, req.(*VerifyResetCodeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuthService_ResetPassword_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResetPasswordRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).ResetPassword(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthService_ResetPassword_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthServiceServer).ResetPassword(ctx, req.(*ResetPasswordRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AuthService_ServiceDesc is the grpc.ServiceDesc for AuthService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -432,6 +540,18 @@ var AuthService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ChangePassword",
 			Handler:    _AuthService_ChangePassword_Handler,
+		},
+		{
+			MethodName: "RequestPasswordReset",
+			Handler:    _AuthService_RequestPasswordReset_Handler,
+		},
+		{
+			MethodName: "VerifyResetCode",
+			Handler:    _AuthService_VerifyResetCode_Handler,
+		},
+		{
+			MethodName: "ResetPassword",
+			Handler:    _AuthService_ResetPassword_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -58,7 +58,8 @@ func newTestServer(t *testing.T) *testServer {
 	uRepo := pgstore.NewUserRepository(pool)
 	sRepo := pgstore.NewSessionRepository(pool)
 	cache := rediscache.New(redisClient)
-	svc := auth.New(uRepo, sRepo, jwtMgr, cache, nil, nil, hooks.NoOp{}, slog.Default(), 7*24*time.Hour)
+	resetStore := rediscache.NewResetCache(redisClient)
+	svc := auth.New(uRepo, sRepo, jwtMgr, cache, resetStore, nil, nil, hooks.NoOp{}, slog.Default(), 7*24*time.Hour)
 
 	// Start gRPC server over in-memory bufconn.
 	lis := bufconn.Listen(bufSize)

@@ -58,7 +58,7 @@ func newFixture(t *testing.T) *fixture {
 	jwtMgr := jwtlib.NewHS256Manager(testJWTSecret, 15*time.Minute)
 	cache := rediscache.New(redisClient)
 
-	svc := auth.New(uRepo, sRepo, jwtMgr, cache, nil, nil, hooks.NoOp{}, slog.Default(), testRefreshTTL)
+	svc := auth.New(uRepo, sRepo, jwtMgr, cache, nil, nil, nil, hooks.NoOp{}, slog.Default(), testRefreshTTL)
 
 	return &fixture{
 		svc:     svc,
@@ -632,7 +632,7 @@ func newFixtureWithGuard(t *testing.T, maxAttempts int) *fixture {
 	guard := bruteforce.New(redisClient, maxAttempts, time.Minute, 15*time.Minute)
 	cache := rediscache.New(redisClient)
 
-	svc := auth.New(uRepo, sRepo, jwtMgr, cache, nil, guard, hooks.NoOp{}, slog.Default(), testRefreshTTL)
+	svc := auth.New(uRepo, sRepo, jwtMgr, cache, nil, nil, guard, hooks.NoOp{}, slog.Default(), testRefreshTTL)
 
 	return &fixture{
 		svc:     svc,
@@ -759,7 +759,7 @@ func newFixtureWithAudit(t *testing.T) (*fixture, *auditSink) {
 	sink := newAuditSink()
 	cache := rediscache.New(redisClient)
 
-	svc := auth.New(uRepo, sRepo, jwtMgr, cache, sink, nil, hooks.NoOp{}, slog.Default(), testRefreshTTL)
+	svc := auth.New(uRepo, sRepo, jwtMgr, cache, nil, sink, nil, hooks.NoOp{}, slog.Default(), testRefreshTTL)
 
 	return &fixture{
 		svc:     svc,
@@ -988,7 +988,7 @@ func TestLogin_ExpiredRefreshTTL_NotCached(t *testing.T) {
 	jwtMgr := jwtlib.NewHS256Manager(testJWTSecret, 15*time.Minute)
 	cache := rediscache.New(rc)
 	// Negative TTL → sessions expire instantly → cacheSession must skip Set.
-	svc := auth.New(uRepo, sRepo, jwtMgr, cache, nil, nil, hooks.NoOp{}, slog.Default(), -time.Hour)
+	svc := auth.New(uRepo, sRepo, jwtMgr, cache, nil, nil, nil, hooks.NoOp{}, slog.Default(), -time.Hour)
 
 	user := fakeUser(t)
 	uRepo.On("GetByEmail", mock.Anything, user.Email).Return(user, nil)
