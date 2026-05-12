@@ -93,21 +93,56 @@ in the proto file.
 
 Loaded from `.env` via `cleanenv`. Key variables:
 
-| Variable                   | Default | Notes                                                            |
-|----------------------------|---------|------------------------------------------------------------------|
-| `ENV`                      | `local` | `local` (pretty logs), `dev`/`prod` (JSON)                       |
-| `GRPC_PORT`                | `8082`  | gRPC listen port                                                 |
-| `GATEWAY_PORT`             | `8080`  | HTTP gateway port                                                |
-| `GRPC_TIMEOUT`             | `5s`    | Deadline for completing new connection handshakes (TLS + HTTP/2) |
-| `POSTGRES_*`               | —       | Host, port, user, password, db                                   |
-| `REDIS_*`                  | —       | Host, port, optional password                                    |
-| `GATEWAY_GRPC_TARGET`      | `""`    | Override gRPC backend address (default: `localhost:<GRPC_PORT>`) |
-| `GATEWAY_GRPC_TLS_CERT`    | `""`    | Path to gRPC server TLS cert; empty = insecure loopback (dev)    |
-| `BRUTE_FORCE_MAX_ATTEMPTS` | `5`     | Failed logins before account lockout                             |
-| `BRUTE_FORCE_WINDOW`       | `15m`   | Rolling window for counting failures                             |
-| `BRUTE_FORCE_LOCKOUT_TTL`  | `15m`   | How long an account stays locked                                 |
-| `RATE_LIMIT_GLOBAL_RPM`    | `300`   | Max requests/min per IP (all endpoints)                          |
-| `RATE_LIMIT_LOGIN_RPM`     | `20`    | Stricter limit for Login and Register endpoints                  |
+| Variable                   | Default  | Notes                                                            |
+|----------------------------|----------|------------------------------------------------------------------|
+| `ENV`                      | `local`  | `local` (pretty logs), `dev`/`prod` (JSON)                       |
+| `GRPC_PORT`                | `8081`   | gRPC listen port                                                 |
+| `GATEWAY_PORT`             | `8080`   | HTTP gateway port                                                |
+| `GRPC_TIMEOUT`             | `5s`     | Deadline for completing new connection handshakes (TLS + HTTP/2) |
+| `JWT_SECRET`               | required | HMAC secret; min 32 chars recommended                            |
+| `JWT_ACCESS_TTL`           | `15m`    | Access token lifetime                                            |
+| `JWT_REFRESH_TTL`          | `720h`   | Refresh token lifetime (30 days)                                 |
+| `JWT_ALGORITHM`            | `hs256`  | `hs256`, `rs256`, or `es256`                                     |
+| `JWT_PRIVATE_KEY_PATH`     | `""`     | PEM private key path (required for `rs256`/`es256`)              |
+| `POSTGRES_*`               | —        | Host, port, user, password, db                                   |
+| `REDIS_*`                  | —        | Host, port, optional password                                    |
+| `GATEWAY_GRPC_TARGET`      | `""`     | Override gRPC backend address (default: `localhost:<GRPC_PORT>`) |
+| `GATEWAY_GRPC_TLS_CERT`    | `""`     | Path to gRPC server TLS cert; empty = insecure loopback (dev)    |
+| `BRUTE_FORCE_MAX_ATTEMPTS` | `5`      | Failed logins before account lockout                             |
+| `BRUTE_FORCE_WINDOW`       | `15m`    | Rolling window for counting failures                             |
+| `BRUTE_FORCE_LOCKOUT_TTL`  | `15m`    | How long an account stays locked                                 |
+| `RATE_LIMIT_GLOBAL_RPM`    | `300`    | Max requests/min per IP (all endpoints)                          |
+| `RATE_LIMIT_LOGIN_RPM`     | `20`     | Stricter limit for Login and Register endpoints                  |
+
+## API Docs
+
+In `ENV=local` or `ENV=dev`, the gateway exposes:
+
+- `GET /openapi.json` — OpenAPI spec (embedded from `docs/`)
+- `GET /docs` — Scalar interactive UI at `http://localhost:8080/docs`
+
+Both endpoints are disabled in `prod`.
+
+## Interceptors
+
+`internal/interceptor/` provides two gRPC unary interceptors wired in `app.go`:
+
+- **`interceptor.Logging`** — logs every request with method, duration, and error code via `slog`.
+- **`interceptor.RateLimit`** — enforces the global and login-specific limits via Redis sliding-window counters. IP is
+  extracted from `x-forwarded-for` metadata (rightmost entry, set by gRPC-Gateway) or falls back to the gRPC peer
+  address. **Fails open** on Redis error to prevent Redis outages from blocking all auth traffic.
+
+Rate limiting runs at the gRPC layer, so it applies to both direct gRPC clients and HTTP clients proxied through
+gRPC-Gateway.
+
+## Input Validation
+
+`internal/lib/validate/` is called at the top of `Register` and `Login` before any DB access:
+
+- **Email** — must match `^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`
+- **Password** — minimum 8 characters, at least one letter, at least one digit
+
+Failures return `codes.InvalidArgument`.
 
 ## API Contracts
 
